@@ -4,10 +4,12 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
+import Link from "next/link";
 import {
   ArrowUpRight,
   Clock,
   Flame,
+  HelpCircle,
   Hourglass,
   SlidersHorizontal,
   Sparkles,
@@ -23,7 +25,6 @@ import {
 import { BountyCard } from "@/components/bounties/bounty-card";
 import { BountyCardSkeleton } from "@/components/bounties/bounty-card-skeleton";
 import { EmptyState } from "@/components/bounties/empty-state";
-import { FilterChips } from "@/components/bounties/filter-chips";
 import { FilterSidebar } from "@/components/bounties/filter-sidebar";
 import { FilterSheetMobile } from "@/components/bounties/filter-sheet-mobile";
 import {
@@ -42,7 +43,7 @@ import type { User } from "@/types/database";
 
 /**
  * /discover client shell. Owns:
- *  • filter state (lifted from FilterSidebar + FilterChips + sort dropdown)
+ *  • filter state (lifted from FilterSidebar + sort dropdown)
  *  • infinite scroll wiring via `useInfiniteBounties`
  *
  * The server passes the first page so the initial paint is cheap; the
@@ -174,30 +175,36 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
             )}
           </p>
         </div>
-        <SortDropdown
-          value={filters.sortBy}
-          onChange={(sortBy) => setFilters({ ...filters, sortBy })}
-        />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/how-it-works"
+            className="press inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 text-small font-medium text-text-primary transition-colors hover:border-border-hover"
+          >
+            <HelpCircle className="size-3.5" strokeWidth={2.25} />
+            How it works
+          </Link>
+          <SortDropdown
+            value={filters.sortBy}
+            onChange={(sortBy) => setFilters({ ...filters, sortBy })}
+          />
+        </div>
       </header>
 
-      {/* ─── Mobile filter row + chips ─────────────────────────────── */}
-      <div className="space-y-2 lg:hidden">
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => setFilterSheetOpen(true)}
-            className="press inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 text-small font-medium text-text-primary hover:border-border-hover"
-          >
-            <SlidersHorizontal className="size-3.5" strokeWidth={2.25} />
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-primary px-1.5 text-[10px] font-semibold text-[#100F16]">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-        </div>
-        <FilterChips filters={filters} onChange={setFilters} />
+      {/* ─── Mobile filter row ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-2 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setFilterSheetOpen(true)}
+          className="press inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 text-small font-medium text-text-primary hover:border-border-hover"
+        >
+          <SlidersHorizontal className="size-3.5" strokeWidth={2.25} />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-primary px-1.5 text-[10px] font-semibold text-[#100F16]">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ─── 3-col grid (desktop) / single col (mobile) ────────────── */}
