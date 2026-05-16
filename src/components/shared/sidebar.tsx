@@ -4,13 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import {
-  Compass,
-  Plus,
-  User,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { Compass, Plus, User, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu, type ConnectedUser } from "./user-menu";
 
@@ -68,9 +62,8 @@ export function Sidebar({ user }: { user?: ConnectedUser | null }) {
         <NavItem href="/profile"  label="Profile"  icon={User} expanded={expanded} pathname={pathname} />
       </nav>
 
-      {/* ─── Bottom: wallet + account ──────────────────────────────────── */}
+      {/* ─── Bottom: account ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 px-3">
-        <WalletPill expanded={expanded} balance={0} />
         <div className="flex h-12 items-center gap-3 rounded-[var(--radius-button)] px-2">
           <UserMenu user={user} />
           {user && (
@@ -148,33 +141,6 @@ function CreateItem({ expanded }: { expanded: boolean }) {
       </span>
       <SidebarLabel show={expanded} className="font-medium">
         Create
-      </SidebarLabel>
-    </Link>
-  );
-}
-
-function WalletPill({
-  expanded,
-  balance,
-}: {
-  expanded: boolean;
-  balance: number;
-}) {
-  const hasBalance = balance > 0;
-  return (
-    <Link
-      href="/earnings"
-      title={hasBalance ? `${balance.toLocaleString()} $BNTY` : "Wallet"}
-      className="flex h-12 items-center gap-3 rounded-[var(--radius-button)] text-text-secondary transition-colors hover:bg-accent-soft hover:text-accent-text"
-    >
-      <span className="relative grid size-12 shrink-0 place-items-center">
-        <Wallet className="size-[22px]" strokeWidth={2} />
-        {hasBalance && !expanded && (
-          <span className="absolute right-2.5 top-2.5 size-1.5 rounded-full bg-accent-primary ring-2 ring-bg-surface" />
-        )}
-      </span>
-      <SidebarLabel show={expanded} className="font-mono tabular-nums">
-        {balance.toLocaleString()} $BNTY
       </SidebarLabel>
     </Link>
   );
