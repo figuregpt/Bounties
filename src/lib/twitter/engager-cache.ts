@@ -58,6 +58,11 @@ export type CachedEngager = {
   handle: string | null;
   engagementTweetId: string | null;
   engagementText: string | null;
+  /** Timestamp from Twitter on the engagement (reply / quote tweet
+   *  creation time). Used to pick the most recent engagement when a
+   *  hunter has posted multiple replies on the same tweet. Null for
+   *  retweets (Twitter doesn't expose a per-retweet timestamp). */
+  engagementCreatedAt: Date | null;
 };
 
 export type EngagerLookupResult = {
@@ -212,6 +217,7 @@ export async function getCachedEngagers(
         handle: r.handle,
         engagementTweetId: r.engagementTweetId,
         engagementText: r.engagementText,
+        engagementCreatedAt: r.engagementCreatedAt,
       });
     }
 
@@ -221,14 +227,30 @@ export async function getCachedEngagers(
       // one tweet — all share the same (tweetId, type, twitterId) key).
       // Postgres rejects the whole INSERT when ON CONFLICT would target
       // the same row twice, so we dedupe at the conflict-key level
-      // before sending the batch. Last write wins — the latest reply
-      // is what we'll show in the verification preview.
+      // before sending the batch. Keep the engagement with the latest
+      // `engagementCreatedAt` so the verifier sees the hunter's CURRENT
+      // reply (covers the "posted wrong text, deleted, posted again"
+      // flow). Retweets have null timestamps — fall back to last-seen.
       const dedupedByKey = new Map<
         string,
         (typeof page.rows)[number]
       >();
       for (const r of page.rows) {
-        dedupedByKey.set(r.twitterId, r);
+        const existing = dedupedByKey.get(r.twitterId);
+        if (!existing) {
+          dedupedByKey.set(r.twitterId, r);
+          continue;
+        }
+        if (!existing.engagementCreatedAt) {
+          dedupedByKey.set(r.twitterId, r);
+          continue;
+        }
+        if (
+          r.engagementCreatedAt &&
+          r.engagementCreatedAt > existing.engagementCreatedAt
+        ) {
+          dedupedByKey.set(r.twitterId, r);
+        }
       }
       const valuesBatch = Array.from(dedupedByKey.values()).map((r) => ({
         tweetId,
@@ -237,6 +259,7 @@ export async function getCachedEngagers(
         engagerHandle: r.handle,
         engagementTweetId: r.engagementTweetId,
         engagementText: r.engagementText,
+        engagementCreatedAt: r.engagementCreatedAt,
       }));
 
       // DB writes are best-effort. Verification correctness lives in the
@@ -255,9 +278,41 @@ export async function getCachedEngagers(
               tweetEngagers.engagerTwitterId,
             ],
             set: {
-              engagerHandle: sql`EXCLUDED.engager_handle`,
-              engagementTweetId: sql`EXCLUDED.engagement_tweet_id`,
-              engagementText: sql`EXCLUDED.engagement_text`,
+              // Only overwrite if the incoming engagement is newer than
+              // (or as new as) what we already have. Older pages can
+              // legitimately surface OLDER replies for the same hunter,
+              // and without this guard a later page walk would clobber
+              // the hunter's current reply with a stale one. Retweets
+              // have null timestamps — for those we fall back to
+              // "always overwrite", matching the previous behavior.
+              engagerHandle: sql`CASE
+                WHEN EXCLUDED.engagement_created_at IS NULL
+                  OR ${tweetEngagers.engagementCreatedAt} IS NULL
+                  OR EXCLUDED.engagement_created_at >= ${tweetEngagers.engagementCreatedAt}
+                THEN EXCLUDED.engager_handle
+                ELSE ${tweetEngagers.engagerHandle}
+              END`,
+              engagementTweetId: sql`CASE
+                WHEN EXCLUDED.engagement_created_at IS NULL
+                  OR ${tweetEngagers.engagementCreatedAt} IS NULL
+                  OR EXCLUDED.engagement_created_at >= ${tweetEngagers.engagementCreatedAt}
+                THEN EXCLUDED.engagement_tweet_id
+                ELSE ${tweetEngagers.engagementTweetId}
+              END`,
+              engagementText: sql`CASE
+                WHEN EXCLUDED.engagement_created_at IS NULL
+                  OR ${tweetEngagers.engagementCreatedAt} IS NULL
+                  OR EXCLUDED.engagement_created_at >= ${tweetEngagers.engagementCreatedAt}
+                THEN EXCLUDED.engagement_text
+                ELSE ${tweetEngagers.engagementText}
+              END`,
+              engagementCreatedAt: sql`CASE
+                WHEN EXCLUDED.engagement_created_at IS NULL
+                  OR ${tweetEngagers.engagementCreatedAt} IS NULL
+                  OR EXCLUDED.engagement_created_at >= ${tweetEngagers.engagementCreatedAt}
+                THEN EXCLUDED.engagement_created_at
+                ELSE ${tweetEngagers.engagementCreatedAt}
+              END`,
               isStillValid: true,
               lastValidatedAt: sql`now()`,
             },
@@ -373,6 +428,7 @@ async function fetchAllEngagers(
       engagerHandle: tweetEngagers.engagerHandle,
       engagementTweetId: tweetEngagers.engagementTweetId,
       engagementText: tweetEngagers.engagementText,
+      engagementCreatedAt: tweetEngagers.engagementCreatedAt,
     })
     .from(tweetEngagers)
     .where(
@@ -388,6 +444,7 @@ async function fetchAllEngagers(
     handle: r.engagerHandle,
     engagementTweetId: r.engagementTweetId,
     engagementText: r.engagementText,
+    engagementCreatedAt: r.engagementCreatedAt,
   }));
 }
 
@@ -397,6 +454,7 @@ type PageResult = {
     handle: string | null;
     engagementTweetId: string | null;
     engagementText: string | null;
+    engagementCreatedAt: Date | null;
   }>;
   nextCursor: string | null;
 };
@@ -415,6 +473,7 @@ async function fetchPage(
         handle: r.handle,
         engagementTweetId: null,
         engagementText: null,
+        engagementCreatedAt: null,
       })),
       nextCursor: page.nextCursor,
     };
@@ -427,6 +486,7 @@ async function fetchPage(
         handle: r.authorHandle,
         engagementTweetId: r.tweetId,
         engagementText: r.text,
+        engagementCreatedAt: parseTwitterDate(r.createdAt),
       })),
       nextCursor: page.nextCursor,
     };
@@ -438,7 +498,14 @@ async function fetchPage(
       handle: r.authorHandle,
       engagementTweetId: r.tweetId,
       engagementText: r.text,
+      engagementCreatedAt: parseTwitterDate(r.createdAt),
     })),
     nextCursor: page.nextCursor,
   };
+}
+
+function parseTwitterDate(raw: string | null): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
 }

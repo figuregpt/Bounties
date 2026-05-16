@@ -91,16 +91,22 @@ export async function verifyClaimLayer1(
     claimId: claim.id,
     userId: user.id,
   };
-  // On retry: skip the engager-cache freshness early-exit so we
-  // actually walk for new content (the hunter probably just did the
-  // action). Cursor stays where it was — we resume from after the
-  // last walked page rather than re-fetching pages 1..N from scratch.
+  // On retry: full re-walk from page 1. Twitter's reply pagination is
+  // newest-first (engagement time DESC), so the cases that drive a
+  // retry — hunter just posted, edited, or deleted+reposted — produce
+  // changes on page 1, NOT after the saved cursor. "Resume from cursor"
+  // walks deeper into OLDER content and misses everything new. We pay
+  // the page-1 refetch cost so we always show the hunter's current
+  // reply, including text edits and replacements.
   //
-  // Final verification passes both `bypassCache: true` and
-  // `restartCursor: true` (Phase 8) because withdrawal detection
-  // requires re-checking already-walked pages for the user's absence.
+  // Cost is bounded by the verify cooldown the UI enforces between
+  // retry button clicks (~30s).
+  //
+  // Cross-hunter sharing still works via the tweet_engagers cache
+  // lookup (separate code path, doesn't depend on cursor).
   const bypassCache = opts.bypassCache ?? claim.verificationAttempts > 0;
-  const restartCursor = opts.restartCursor ?? false;
+  const restartCursor =
+    opts.restartCursor ?? claim.verificationAttempts > 0;
   // F2: final verification must NOT trust persisted *Verified booleans —
   // the whole point is to detect a hunter who unretweets/deletes/unfollows
   // between initial and final check. Initial verification leaves
