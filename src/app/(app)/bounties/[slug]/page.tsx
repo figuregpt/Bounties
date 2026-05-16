@@ -12,6 +12,7 @@ import {
 import { getTokenInfo } from "@/lib/db/queries/tokens";
 import { checkEligibility } from "@/lib/bounties/eligibility";
 import { getBountyUIState } from "@/lib/bounties/state";
+import { formatTokenAmount } from "@/lib/format";
 import { BountyDetailClient } from "./bounty-detail-client";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function generateMetadata({
   const bounty = await getBountyBySlug(slug, null);
   if (!bounty) return { title: "Bounty not found" };
   const creator = bounty.creator.handle;
-  const reward = `${bounty.rewardPerHunter} ${bounty.rewardTokenSymbol}`;
+  const reward = `${formatTokenAmount(bounty.rewardPerHunter)} ${bounty.rewardTokenSymbol}`;
   return {
     title: `@${creator} · ${reward} bounty`,
     description: `${reward} per hunter, ${bounty.maxHunters} slots. Engage on Twitter, get paid on Solana.`,
