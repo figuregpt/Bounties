@@ -87,14 +87,25 @@ export async function getCachedEngagers(
     targetTwitterId?: string;
     /**
      * Skip the freshness window and skip the "cache already contains the
-     * target" early-exit, forcing a fresh walk from cursor null.
+     * target" early-exit, so a walk actually happens. Cursor is preserved
+     * by default — we resume from `header.lastCursor` and only fetch new
+     * pages (twitterapi.io orders engagement DESC, but new pages added
+     * since our last walk will appear as nextCursor steps from where we
+     * stopped).
      *
-     * Use case: a hunter retries verification after editing their reply
-     * on X — the cache row from 10s ago is stale relative to their edit,
-     * and we need to refetch to see the updated text. Upserts still write
-     * back so concurrent hunters share the cost.
+     * Use case: hunter retries after we already walked pages 1-5 last
+     * time. Skip the "fresh, fully fetched, just hand back the cache"
+     * early-exit, but resume from after page 5 instead of refetching
+     * pages 1-5.
      */
     bypassCache?: boolean;
+    /**
+     * Additionally restart pagination from cursor=null. Use this when
+     * the goal is to re-fetch already-walked pages — e.g., final
+     * verification detecting deletions, since deleted replies just
+     * vanish from old pages with no nextCursor signal.
+     */
+    restartCursor?: boolean;
     ctx?: Ctx;
   } = {},
 ): Promise<EngagerLookupResult> {
@@ -167,15 +178,17 @@ export async function getCachedEngagers(
     };
   }
 
-  // 3) Walk new pages. On bypass we restart from cursor null and clear
-  //    the fully-fetched bit so the for-loop actually walks again.
-  let cursor: string | null = opts.bypassCache
+  // 3) Walk new pages. `restartCursor` forces a full re-walk from page 1
+  //    (used by final verification to detect deletions). Otherwise we
+  //    resume from `header.lastCursor` — even on bypassCache — so the
+  //    common retry path doesn't refetch pages we already cached.
+  let cursor: string | null = opts.restartCursor
     ? null
     : header.lastCursor ?? null;
   let pagesWalked = 0;
   let found = false;
   let budgetExhausted = false;
-  let isFullyFetched = opts.bypassCache ? false : header.isFullyFetched;
+  let isFullyFetched = opts.restartCursor ? false : header.isFullyFetched;
   const walkStartedAt = Date.now();
   // In-memory accumulator — what we actually saw on the wire. Verification
   // reads from this if the DB read-back returns less than what we fetched

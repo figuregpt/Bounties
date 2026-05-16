@@ -130,6 +130,9 @@ async function finalVerifyClaim(
   // detecting actions that were withdrawn after Layer 1/2 passed.
   const result = await verifyClaimLayer1(claim, bounty, user, {
     bypassCache: true,
+    // Withdrawal detection: must re-check pages we already walked
+    // (deleted replies vanish from old pages with no nextCursor signal).
+    restartCursor: true,
     forceRecheck: true,
   });
 

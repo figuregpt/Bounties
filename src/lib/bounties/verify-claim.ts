@@ -78,7 +78,11 @@ export async function verifyClaimLayer1(
   claim: Claim,
   bounty: Bounty,
   user: User,
-  opts: { bypassCache?: boolean; forceRecheck?: boolean } = {},
+  opts: {
+    bypassCache?: boolean;
+    restartCursor?: boolean;
+    forceRecheck?: boolean;
+  } = {},
 ): Promise<ClaimVerificationResult> {
   const results: ActionVerification[] = [];
   const patch: ClaimVerificationResult["patch"] = {};
@@ -87,12 +91,16 @@ export async function verifyClaimLayer1(
     claimId: claim.id,
     userId: user.id,
   };
-  // After the first failed attempt the user has likely edited their
-  // reply / posted the missing action on X — force a fresh fetch so the
-  // 60s cache doesn't echo back stale data. Final verification (Phase 8)
-  // also forces fresh because the cache is irrelevant once a bounty has
-  // ended and we want to detect withdrawn actions.
+  // On retry: skip the engager-cache freshness early-exit so we
+  // actually walk for new content (the hunter probably just did the
+  // action). Cursor stays where it was — we resume from after the
+  // last walked page rather than re-fetching pages 1..N from scratch.
+  //
+  // Final verification passes both `bypassCache: true` and
+  // `restartCursor: true` (Phase 8) because withdrawal detection
+  // requires re-checking already-walked pages for the user's absence.
   const bypassCache = opts.bypassCache ?? claim.verificationAttempts > 0;
+  const restartCursor = opts.restartCursor ?? false;
   // F2: final verification must NOT trust persisted *Verified booleans —
   // the whole point is to detect a hunter who unretweets/deletes/unfollows
   // between initial and final check. Initial verification leaves
@@ -106,6 +114,7 @@ export async function verifyClaimLayer1(
       user.twitterId,
       ctx,
       bypassCache,
+      restartCursor,
     );
     results.push(result);
     if (result.passed) patch.retweetVerified = true;
@@ -117,7 +126,7 @@ export async function verifyClaimLayer1(
 
   /* ---- Reply ------------------------------------------------------ */
   if (bounty.requiresReply && (!claim.replyVerified || forceRecheck)) {
-    const result = await verifyReply(bounty, user.twitterId, ctx, bypassCache);
+    const result = await verifyReply(bounty, user.twitterId, ctx, bypassCache, restartCursor);
     results.push(result);
     if (result.passed) {
       patch.replyVerified = true;
@@ -135,7 +144,7 @@ export async function verifyClaimLayer1(
 
   /* ---- Quote ------------------------------------------------------ */
   if (bounty.requiresQuote && (!claim.quoteVerified || forceRecheck)) {
-    const result = await verifyQuote(bounty, user.twitterId, ctx, bypassCache);
+    const result = await verifyQuote(bounty, user.twitterId, ctx, bypassCache, restartCursor);
     results.push(result);
     if (result.passed) {
       patch.quoteVerified = true;
@@ -381,11 +390,13 @@ async function verifyRetweet(
   userTwitterId: string,
   ctx: { bountyId: string; claimId: string; userId: string },
   bypassCache: boolean,
+  restartCursor: boolean,
 ): Promise<ActionVerification> {
   try {
     const result = await getCachedEngagers(tweetId, "retweet", {
       targetTwitterId: userTwitterId,
       bypassCache,
+      restartCursor,
       ctx,
     });
     if (matchesUser(result.engagers, userTwitterId)) {
@@ -428,11 +439,13 @@ async function verifyReply(
   userTwitterId: string,
   ctx: { bountyId: string; claimId: string; userId: string },
   bypassCache: boolean,
+  restartCursor: boolean,
 ): Promise<ActionVerification> {
   try {
     const result = await getCachedEngagers(bounty.tweetId, "reply", {
       targetTwitterId: userTwitterId,
       bypassCache,
+      restartCursor,
       ctx,
     });
     const userReplies = result.engagers
@@ -501,11 +514,13 @@ async function verifyQuote(
   userTwitterId: string,
   ctx: { bountyId: string; claimId: string; userId: string },
   bypassCache: boolean,
+  restartCursor: boolean,
 ): Promise<ActionVerification> {
   try {
     const result = await getCachedEngagers(bounty.tweetId, "quote", {
       targetTwitterId: userTwitterId,
       bypassCache,
+      restartCursor,
       ctx,
     });
     const userQuotes = result.engagers
