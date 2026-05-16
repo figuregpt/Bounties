@@ -1,0 +1,1 @@
+ALTER TABLE "claims" ADD COLUMN "last_verification_attempt_at" timestamp with time zone;

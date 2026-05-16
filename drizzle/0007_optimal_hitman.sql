@@ -1,0 +1,1 @@
+ALTER TABLE "claims" ADD COLUMN "follow_verified" boolean;

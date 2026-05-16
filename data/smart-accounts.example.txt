@@ -1,0 +1,31 @@
+# bounties.fm — smart accounts seed file
+#
+# Format: one handle per line (with or without @). Optionally annotate
+# the tier inline (tier1 / tier2 / standard). Lines starting with # are
+# ignored.
+#
+# Refresh cadence per tier:
+#   tier1     — incremental every 7d,  full every 30d
+#   tier2     — incremental every 14d, full every 60d
+#   standard  — incremental every 30d, full every 90d
+#
+# Apply with:
+#   npm run smart-accounts:seed -- ./data/smart-accounts.txt
+#   npm run smart-accounts:seed -- ./data/smart-accounts.txt --enrich
+#
+# Replace the placeholders below with real handles when you're ready.
+
+# === tier1 — top voices, refresh weekly ===
+aeyakovenko          tier1
+solana               tier1
+ansem                tier1
+
+# === tier2 — strong signal, refresh biweekly ===
+jup_dex              tier2
+phantom              tier2
+backpack_xyz         tier2
+
+# === standard — wide net, monthly refresh ===
+solanafloor
+solanaspaces
+@bagsdotfm

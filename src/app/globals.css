@@ -1,26 +1,242 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@custom-variant dark (&:is(.dark *));
+
+/* =========================================================================
+   bounties.fm design tokens — dark mode only.
+   Surfaces, text, accents, status, token-category chips, typography, radii.
+   ========================================================================= */
+@theme {
+  /* Surfaces */
+  --color-bg-base: #0E0E10;
+  --color-bg-surface: #15151A;
+  --color-bg-elevated: #1C1C22;
+  --color-bg-tweet: #0E0E10;
+
+  /* Borders */
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-border-default: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.10);
+
+  /* Text */
+  --color-text-primary: #EDEDF0;
+  --color-text-secondary: #9B9BA5;
+  --color-text-tertiary: #6B6B75;
+  --color-text-quaternary: #45454D;
+
+  /* Accent (Phantom lavender) */
+  --color-accent-primary: #AB9FF2;
+  --color-accent-hover: #BFB5F5;
+  --color-accent-soft: rgba(171, 159, 242, 0.12);
+  --color-accent-border: rgba(171, 159, 242, 0.18);
+  --color-accent-text: #C7BFFA;
+
+  /* Status */
+  --color-success: #97C459;
+  --color-success-soft: rgba(151, 196, 89, 0.10);
+  --color-warning: #FAC775;
+  --color-warning-soft: rgba(239, 159, 39, 0.10);
+  --color-danger: #F09595;
+  --color-danger-soft: rgba(226, 75, 74, 0.10);
+
+  /* Token-category chips */
+  --color-token-platform-bg: #AB9FF2;
+  --color-token-platform-text: #C7BFFA;
+  --color-token-stable-bg: #378ADD;
+  --color-token-stable-text: #85B7EB;
+  --color-token-sol-bg: #639922;
+  --color-token-sol-text: #C0DD97;
+  --color-token-meme-bg: #D85A30;
+  --color-token-meme-text: #F0997B;
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+  --font-heading: var(--font-sans);
+
+  --text-display: 64px;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 500;
+
+  --text-h1: 40px;
+  --text-h1--line-height: 1.15;
+  --text-h1--letter-spacing: -0.01em;
+  --text-h1--font-weight: 500;
+
+  --text-h2: 28px;
+  --text-h2--line-height: 1.2;
+  --text-h2--font-weight: 500;
+
+  --text-h3: 20px;
+  --text-h3--line-height: 1.3;
+  --text-h3--font-weight: 500;
+
+  --text-body-large: 16px;
+  --text-body-large--line-height: 1.5;
+  --text-body-large--font-weight: 400;
+
+  --text-body: 15px;
+  --text-body--line-height: 1.5;
+  --text-body--font-weight: 400;
+
+  --text-small: 13px;
+  --text-small--line-height: 1.4;
+  --text-small--font-weight: 400;
+
+  --text-caption: 11px;
+  --text-caption--line-height: 1.3;
+  --text-caption--letter-spacing: 0.04em;
+  --text-caption--font-weight: 500;
+
+  /* Radii */
+  --radius-card: 14px;
+  --radius-button: 10px;
+  --radius-pill: 9999px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius-3xl: 32px;
 }
 
+/* Map shadcn semantic tokens onto bounties.fm tokens so the generated
+   ui/* primitives render in dark theme without being rewritten. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--color-bg-base);
+  --color-foreground: var(--color-text-primary);
+
+  --color-card: var(--color-bg-surface);
+  --color-card-foreground: var(--color-text-primary);
+
+  --color-popover: var(--color-bg-elevated);
+  --color-popover-foreground: var(--color-text-primary);
+
+  --color-primary: var(--color-accent-primary);
+  --color-primary-foreground: #0E0E10;
+
+  --color-secondary: var(--color-bg-elevated);
+  --color-secondary-foreground: var(--color-text-primary);
+
+  --color-muted: var(--color-bg-elevated);
+  --color-muted-foreground: var(--color-text-secondary);
+
+  --color-accent: var(--color-accent-soft);
+  --color-accent-foreground: var(--color-accent-text);
+
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: #0E0E10;
+
+  --color-border: var(--color-border-default);
+  --color-input: var(--color-border-default);
+  --color-ring: var(--color-accent-border);
+
+  --radius: var(--radius-card);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html {
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  * {
+    border-color: var(--color-border-default);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Numbers — tabular by default everywhere so balances/timers don't reflow */
+.tabular,
+[class*="font-mono"],
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+/* Custom utilities — spring-feel scale on press/hover, shimmer skeleton */
+@utility press {
+  transition-property: transform;
+  transition-duration: 150ms;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+@utility hover-lift {
+  transition-property: transform;
+  transition-duration: 200ms;
+}
+.hover-lift:hover {
+  transform: scale(1.01);
+}
+
+@utility shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-surface) 0%,
+    var(--color-bg-elevated) 50%,
+    var(--color-bg-surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Hide the native spinner arrows on every <input type="number"> — they're
+   ugly and noisy. Combined with the onWheel-blur in `ui/input.tsx`, this
+   makes number inputs behave like text inputs that happen to accept only
+   digits, which is what creators expect when setting reward / slot counts. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* iOS safe-area bottom padding — tucks under the home indicator on
+ * notched devices. Used by the mobile bottom nav + mobile filter sheet
+ * footer so primary actions don't sit behind the inset.
+ */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Hide scrollbars on horizontal scroll containers (e.g. the mobile
+ * filter chip row). Functionality preserved (touch / wheel scroll
+ * still work); just no chrome rendered.
+ */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

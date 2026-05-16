@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# dev / test reports — may contain dev secrets, keep local
+TEST_REPORT_PHASE8.md
 
 # vercel
 .vercel
