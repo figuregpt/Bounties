@@ -25,6 +25,9 @@
     "test:attacks": "dotenv -e .env.local -- tsx --conditions=react-server scripts/test-attack-vectors.ts",
     "security:audit": "dotenv -e .env.local -- tsx --conditions=react-server scripts/security-audit.ts"
   },
+  "engines": {
+    "node": ">=20.18.0"
+  },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
     "@hookform/resolvers": "^5.2.2",
