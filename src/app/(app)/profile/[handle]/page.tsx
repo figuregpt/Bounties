@@ -13,7 +13,26 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle: rawHandle } = await params;
   const handle = decodeURIComponent(rawHandle).replace(/^@/, "");
-  return { title: `@${handle}` };
+  const title = `@${handle}`;
+  const description = `@${handle}'s profile on bounties.fm — earnings, bounties hunted, bounties created.`;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "profile",
+      url: `/profile/${handle}`,
+      siteName: "bounties.fm",
+      // Image auto-wired from co-located opengraph-image.tsx.
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      creator: `@${handle}`,
+    },
+  };
 }
 
 /**

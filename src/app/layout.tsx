@@ -14,6 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // `metadataBase` lets Next.js resolve every relative OG / Twitter
+  // image URL (including the auto-wired `opengraph-image.tsx` outputs)
+  // to an absolute https URL that scrapers can fetch.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://bounties.fm",
+  ),
   // Title template: any page that exports its own `metadata.title`
   // renders as "<title> · bounties.fm". Pages that don't set a title
   // (e.g., transient screens) fall back to the bare `default`.
@@ -21,7 +27,25 @@ export const metadata: Metadata = {
     default: "bounties.fm",
     template: "%s · bounties.fm",
   },
-  description: "Token rewards for Twitter engagement. Bounties on Solana.",
+  description:
+    "Raid tweets, earn tokens. Solana-backed bounties for every reply, retweet, and follow.",
+  openGraph: {
+    title: "bounties.fm",
+    description:
+      "Raid tweets, earn tokens. Solana-backed bounties for every reply, retweet, and follow.",
+    url: "/",
+    siteName: "bounties.fm",
+    type: "website",
+    // Image auto-wired from `src/app/opengraph-image.tsx`.
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "bounties.fm",
+    description:
+      "Raid tweets, earn tokens. Solana-backed bounties on every reply, retweet, and follow.",
+    creator: "@bountiesfm",
+    // Image auto-wired from the same file convention.
+  },
 };
 
 export default function RootLayout({

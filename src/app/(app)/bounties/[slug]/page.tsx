@@ -26,11 +26,30 @@ export async function generateMetadata({
   const { slug } = await params;
   const bounty = await getBountyBySlug(slug, null);
   if (!bounty) return { title: "Bounty not found" };
+
   const creator = bounty.creator.handle;
   const reward = `${formatTokenAmount(bounty.rewardPerHunter)} ${bounty.rewardTokenSymbol}`;
+  const title = `${reward} · @${creator}`;
+  const description = `${bounty.maxHunters} slots · ${bounty.currentHuntersCount} claimed. Reply, retweet, or follow to hunt this bounty on Solana.`;
+  const url = `/bounties/${slug}`;
+
   return {
-    title: `@${creator} · ${reward} bounty`,
-    description: `${reward} per hunter, ${bounty.maxHunters} slots. Engage on Twitter, get paid on Solana.`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      url,
+      siteName: "bounties.fm",
+      // Image auto-wired from co-located opengraph-image.tsx.
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      creator: `@${creator}`,
+    },
   };
 }
 
