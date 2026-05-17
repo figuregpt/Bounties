@@ -31,16 +31,12 @@ export function HowItWorksClient() {
   return (
     <div className="mx-auto max-w-3xl space-y-10 pb-12">
       {/* ─── Hero ─────────────────────────────────────────────────────── */}
-      <header className="space-y-4 text-center">
+      <header className="space-y-3 text-center">
         <h1 className="text-display tracking-tight">
-          Bounties on Twitter,
-          <br />
-          paid on Solana
+          Raid tweets, earn tokens
         </h1>
-        <p className="mx-auto max-w-xl text-body leading-relaxed text-text-secondary">
-          Creators escrow rewards on a tweet. Hunters complete the action and
-          get paid in seconds. You only pay for engagement you actually got —
-          unfilled slots refund automatically.
+        <p className="mx-auto max-w-lg text-body text-text-secondary">
+          Solana-backed bounties for every reply, retweet, and follow.
         </p>
       </header>
 
