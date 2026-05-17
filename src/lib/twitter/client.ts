@@ -288,10 +288,21 @@ export async function getTweetReplies(
   tweetId: string,
   opts: { cursor?: string | null; ctx?: TwitterClientContext } = {},
 ): Promise<{ replies: TweetReplyRow[]; nextCursor: string | null }> {
+  // V2 endpoint surfaces recent replies that the V1 index drops — we
+  // hit cases where a hunter posted their reply, twitterapi.io's V1
+  // endpoint returned only the bounty author's own tweet, and the
+  // verify check failed with "didn't find your reply". V2 (with
+  // queryType=Latest so the cursor walks newest-first) returns the
+  // full conversation including replies that were posted within the
+  // last few minutes.
   const payload = await request<RawRepliesEnvelope>({
     method: "GET",
-    path: "/twitter/tweet/replies",
-    query: { tweetId, cursor: opts.cursor ?? undefined },
+    path: "/twitter/tweet/replies/v2",
+    query: {
+      tweetId,
+      cursor: opts.cursor ?? undefined,
+      queryType: "Latest",
+    },
     costUsd: COST.replies,
     ctx: opts.ctx ?? {},
   });
