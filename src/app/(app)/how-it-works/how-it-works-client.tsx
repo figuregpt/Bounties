@@ -11,7 +11,6 @@ import {
   MessageCircle,
   Repeat2,
   Share2,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,18 +31,16 @@ export function HowItWorksClient() {
   return (
     <div className="mx-auto max-w-3xl space-y-10 pb-12">
       {/* ─── Hero ─────────────────────────────────────────────────────── */}
-      <header className="space-y-3 text-center">
-        <p className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] bg-accent-soft px-3 py-1 text-caption font-medium uppercase tracking-wider text-accent-text">
-          <Sparkles className="size-3" strokeWidth={2.5} />
-          How it works
-        </p>
+      <header className="space-y-4 text-center">
         <h1 className="text-display tracking-tight">
-          Token rewards for Twitter engagement
+          Bounties on Twitter,
+          <br />
+          paid on Solana
         </h1>
-        <p className="mx-auto max-w-xl text-body text-text-secondary">
-          Creators escrow rewards on their tweets. Hunters complete the
-          required actions — replies, retweets, follows — and earn payouts on
-          Solana. Everything settles on-chain.
+        <p className="mx-auto max-w-xl text-body leading-relaxed text-text-secondary">
+          Creators escrow rewards on a tweet. Hunters complete the action and
+          get paid in seconds. You only pay for engagement you actually got —
+          unfilled slots refund automatically.
         </p>
       </header>
 
