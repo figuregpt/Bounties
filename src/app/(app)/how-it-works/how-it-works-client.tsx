@@ -354,11 +354,11 @@ function TweetReplyMock() {
       </div>
       {/* Reply */}
       <div className="mt-2 flex gap-2">
-        <MockAvatar letter="Y" size={28} tint="accent" />
+        <MockAvatar letter="B" size={28} tint="accent" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 text-[11px]">
-            <span className="font-semibold">yigo</span>
-            <span className="text-[#71767B]">@0xyigo · now</span>
+            <span className="font-semibold">bounties.fm</span>
+            <span className="text-[#71767B]">@bountiesfm · now</span>
           </div>
           <div className="text-[10px] text-[#71767B]">
             Replying to <span className="text-[#1D9BF0]">@figuregpt</span>
