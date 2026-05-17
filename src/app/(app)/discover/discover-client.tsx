@@ -9,7 +9,6 @@ import {
   ArrowUpRight,
   Clock,
   Flame,
-  HelpCircle,
   Hourglass,
   SlidersHorizontal,
   Sparkles,
@@ -178,9 +177,8 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
         <div className="flex items-center gap-2">
           <Link
             href="/how-it-works"
-            className="press inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 text-small font-medium text-text-primary transition-colors hover:border-border-hover"
+            className="press inline-flex h-9 items-center rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 text-small font-medium text-text-primary transition-colors hover:border-border-hover"
           >
-            <HelpCircle className="size-3.5" strokeWidth={2.25} />
             How it works
           </Link>
           <SortDropdown

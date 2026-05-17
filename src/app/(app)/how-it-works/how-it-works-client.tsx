@@ -6,20 +6,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   CheckCircle2,
-  Coins,
-  Eye,
-  Flame,
   Gift,
   Heart,
-  Hourglass,
   MessageCircle,
-  PartyPopper,
   Repeat2,
-  Send,
   Share2,
   Sparkles,
-  Wallet,
-  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -117,7 +109,6 @@ export function HowItWorksClient() {
 type Step = {
   title: string;
   body: string;
-  icon: LucideIcon;
   illustration: () => React.ReactElement;
 };
 
@@ -125,31 +116,26 @@ const HUNTER_STEPS: Step[] = [
   {
     title: "Browse Discover",
     body: "Open Discover, filter by token, reward size, or time left. Each card shows the reward per hunter, slot count, and the tweet you'll engage with.",
-    icon: Eye,
     illustration: BountyCardMock,
   },
   {
     title: "Open the bounty, hit 'Hunt now'",
     body: "Reserving a slot locks in your payout if you complete the action. Slots are capped — the bounty fills first-come-first-served as hunters verify.",
-    icon: Flame,
     illustration: BountyDetailMock,
   },
   {
     title: "Complete the action on Twitter",
     body: "Reply, retweet, or follow — whatever the bounty asks. Replies usually need specific keywords; the rules panel lists them. Reply bounties only work on root tweets, not on someone else's reply.",
-    icon: Send,
     illustration: TweetReplyMock,
   },
   {
     title: "Tap Verify",
     body: "We pull your reply from Twitter, check the rules, and lock in your slot. If we can't find it yet (Twitter cache lag), give it 30 seconds and retry.",
-    icon: CheckCircle2,
     illustration: VerifyResultMock,
   },
   {
     title: "Claim your reward",
     body: "After the bounty ends, your slot moves to your profile's Claim tab. Tap claim — the reward lands in your connected Solana wallet within seconds.",
-    icon: Coins,
     illustration: ClaimCenterMock,
   },
 ];
@@ -158,37 +144,31 @@ const CREATOR_STEPS: Step[] = [
   {
     title: "Paste a tweet URL",
     body: "It has to be a root tweet you own (or one whose engagement you're paying to amplify). Replies and quote-tweets aren't supported as bounty targets.",
-    icon: Send,
     illustration: TweetCardMock,
   },
   {
     title: "Pick the actions hunters must do",
     body: "Combine any of reply, retweet, follow. For replies, set required keywords (must include), forbidden keywords, minimum length. The form previews the rules in real time.",
-    icon: Sparkles,
     illustration: RulesMock,
   },
   {
     title: "Set the reward + slots",
     body: "Choose your token (USDC, SOL, or any SPL mint), reward per hunter, and how many slots. Total pool = reward × slots. A $1 flat creation fee covers verification + infra.",
-    icon: Coins,
     illustration: RewardMock,
   },
   {
     title: "Sign the escrow tx",
     body: "Phantom or Solflare prompts to send the full pool + creation fee to the platform treasury. The bounty goes live as soon as the tx confirms.",
-    icon: Wallet,
     illustration: WalletPromptMock,
   },
   {
     title: "Watch hunters fill the slots",
     body: "Real-time activity feed shows verifications as they happen. When the bounty ends, unclaimed rewards refund to your wallet automatically via the completion cron.",
-    icon: Hourglass,
     illustration: ActivityFeedMock,
   },
   {
     title: "Done — campaign closed",
     body: "Final verification re-checks every claim against Twitter (detects deletions) before payouts settle. You see the analytics on the bounty page; hunters see the reward in their Claim tab.",
-    icon: PartyPopper,
     illustration: CompletedMock,
   },
 ];
@@ -231,18 +211,14 @@ function StepCard({
   index,
   title,
   body,
-  icon: Icon,
   illustration: Illustration,
 }: Step & { index: number }) {
   return (
     <article className="grid gap-4 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5 sm:grid-cols-[1fr_280px] sm:gap-6 sm:p-6">
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-full bg-accent-soft font-mono text-small text-accent-text">
-            {index}
-          </span>
-          <Icon className="size-4 text-text-tertiary" strokeWidth={2.25} />
-        </div>
+        <span className="inline-grid size-7 place-items-center rounded-full bg-accent-soft font-mono text-small text-accent-text">
+          {index}
+        </span>
         <h3 className="text-h3 font-medium">{title}</h3>
         <p className="text-small leading-relaxed text-text-secondary">{body}</p>
       </div>
