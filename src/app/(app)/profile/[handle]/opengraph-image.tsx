@@ -1,6 +1,16 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { ImageResponse } from "next/og";
 import { getProfileData } from "@/lib/db/queries/profile";
 import { formatUsd } from "@/lib/format";
+
+async function logoDataUri(): Promise<string> {
+  const svg = await readFile(
+    path.join(process.cwd(), "public", "bountieslogo.svg"),
+    "utf-8",
+  );
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
 
 /**
  * Dynamic OG image for /profile/[handle]. Hunter brags about their
@@ -20,7 +30,10 @@ export default async function ProfileOgImage({
 }) {
   const { handle: raw } = await params;
   const handle = decodeURIComponent(raw).replace(/^@/, "");
-  const data = await getProfileData(handle);
+  const [data, logoSrc] = await Promise.all([
+    getProfileData(handle),
+    logoDataUri(),
+  ]);
 
   if (!data) {
     return new ImageResponse(
@@ -79,23 +92,8 @@ export default async function ProfileOgImage({
 
         {/* Top: brand */}
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 12,
-              background: "#AB9FF2",
-              color: "#100F16",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 36,
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-          >
-            B
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logoSrc} alt="bounties.fm" width={52} height={52} />
           <div style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.01em" }}>
             bounties.fm
           </div>

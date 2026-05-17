@@ -1,9 +1,11 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { ImageResponse } from "next/og";
 
 /**
  * Default OG image for / and any route that doesn't ship its own
- * `opengraph-image.tsx`. Branded card with the lavender B mark and the
- * site tagline. Rendered on-demand by Next.js at /opengraph-image.png.
+ * `opengraph-image.tsx`. Branded card with the lavender bounties.fm
+ * mark and the site tagline. Rendered on-demand by Next.js.
  */
 
 export const runtime = "nodejs";
@@ -11,7 +13,16 @@ export const alt = "bounties.fm — Raid tweets, earn tokens";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+async function logoDataUri(): Promise<string> {
+  const svg = await readFile(
+    path.join(process.cwd(), "public", "bountieslogo.svg"),
+    "utf-8",
+  );
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
 export default async function RootOgImage() {
+  const logoSrc = await logoDataUri();
   return new ImageResponse(
     (
       <div
@@ -43,23 +54,8 @@ export default async function RootOgImage() {
 
         {/* Brand mark + wordmark */}
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div
-            style={{
-              width: 100,
-              height: 100,
-              borderRadius: 24,
-              background: "#AB9FF2",
-              color: "#100F16",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 72,
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-          >
-            B
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logoSrc} alt="bounties.fm" width={100} height={100} />
           <div style={{ fontSize: 44, fontWeight: 500, letterSpacing: "-0.01em" }}>
             bounties.fm
           </div>
