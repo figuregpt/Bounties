@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Gift, Loader } from "lucide-react";
+import { ArrowRight, Loader } from "lucide-react";
 import { formatUsd } from "@/lib/format";
 
 type Props = {
@@ -37,11 +37,6 @@ export function PendingHero({
       className="relative overflow-hidden rounded-[var(--radius-card)] px-6 py-7 sm:px-8 sm:py-8"
       style={{ background: "#AB9FF2" }}
     >
-      <Gift
-        className="absolute right-5 top-5 size-16 sm:size-20"
-        strokeWidth={1.5}
-        style={{ color: "#3C3489", opacity: 0.4 }}
-      />
       <p
         className="text-caption uppercase tracking-wider"
         style={{ color: "#26215C" }}

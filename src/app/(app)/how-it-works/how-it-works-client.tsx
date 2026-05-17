@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   CheckCircle2,
-  Gift,
   Heart,
   MessageCircle,
   Repeat2,
@@ -391,12 +390,9 @@ function ClaimCenterMock() {
         <div className="text-[9px] font-medium uppercase tracking-wider opacity-80">
           Pending rewards
         </div>
-        <div className="mt-1 flex items-end justify-between gap-2">
-          <div>
-            <div className="text-2xl font-bold leading-none">$10</div>
-            <div className="mt-1 text-[9px] opacity-75">across 2 bounties</div>
-          </div>
-          <Gift className="size-7 opacity-60" strokeWidth={1.75} />
+        <div className="mt-1">
+          <div className="text-2xl font-bold leading-none">$10</div>
+          <div className="mt-1 text-[9px] opacity-75">across 2 bounties</div>
         </div>
         <button
           type="button"
