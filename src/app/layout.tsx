@@ -28,11 +28,11 @@ export const metadata: Metadata = {
     template: "%s · bounties.fm",
   },
   description:
-    "Raid tweets, earn tokens. Solana-backed bounties for every reply, retweet, and follow.",
+    "Raid tweets, earn tokens. Bounties.fm pays hunters real crypto on Solana for every reply, retweet, and follow they complete on X.",
   openGraph: {
     title: "bounties.fm",
     description:
-      "Raid tweets, earn tokens. Solana-backed bounties for every reply, retweet, and follow.",
+      "Raid tweets, earn tokens. Bounties.fm pays hunters real crypto on Solana for every reply, retweet, and follow they complete on X.",
     url: "/",
     siteName: "bounties.fm",
     type: "website",
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "bounties.fm",
     description:
-      "Raid tweets, earn tokens. Solana-backed bounties on every reply, retweet, and follow.",
+      "Raid tweets, earn tokens. Bounties.fm pays hunters real crypto on Solana for every reply, retweet, and follow on X.",
     creator: "@bountiesfm",
     // Image auto-wired from the same file convention.
   },
