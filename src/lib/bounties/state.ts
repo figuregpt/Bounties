@@ -194,8 +194,7 @@ function hasEnded(bounty: Bounty): boolean {
   return endsAt.getTime() < Date.now();
 }
 
-function creatorState(bounty: Bounty): BountyUIState {
-  const isPaused = bounty.status === ("paused" as BountyStatus);
+function creatorState(_bounty: Bounty): BountyUIState {
   return {
     kind: "is_creator",
     title: "Your bounty",
@@ -208,12 +207,7 @@ function creatorState(bounty: Bounty): BountyUIState {
       variant: "primary",
       action: "view_analytics",
     },
-    secondaryCta: {
-      label: isPaused ? "Resume bounty" : "Pause bounty",
-      variant: "secondary",
-      action: isPaused ? "resume_bounty" : "pause_bounty",
-      icon: isPaused ? "Play" : "Pause",
-    },
+    secondaryCta: null,
   };
 }
 

@@ -199,6 +199,19 @@ export function BountyDetailClient({
         window.open(bounty.tweetUrl, "_blank", "noreferrer");
         break;
 
+      case "view_analytics":
+        // Bounty detail page already IS the analytics view for the
+        // creator — slot fill, hunters list, metadata. Open the
+        // hunters section and scroll it into view so they land on
+        // the data, not on the now-redundant CTA pair.
+        setHuntersOpen(true);
+        requestAnimationFrame(() => {
+          document
+            .querySelector("[data-hunters-section]")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        break;
+
       default:
         setActionMessage(`'${cta.action}' wiring lands in a later phase.`);
     }
@@ -437,7 +450,7 @@ function HunterSection({
   tokenLogoUrl: string | null;
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" data-hunters-section>
       <button
         type="button"
         onClick={onToggle}

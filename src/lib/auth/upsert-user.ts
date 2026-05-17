@@ -95,8 +95,12 @@ export async function upsertUserFromTwitter(
           args.avatarUrl ??
           existing.avatarUrl,
         bio: twitterInfo?.description ?? existing.bio,
+        // Prefer fresh twitterapi.io truth, but if that fetch failed
+        // (twitterInfo null) keep the existing value rather than
+        // letting NextAuth's `args.twitterVerified` clobber it —
+        // Twitter v2 OAuth doesn't reliably surface Blue-verified.
         twitterVerified:
-          twitterInfo?.isVerified ?? args.twitterVerified ?? existing.twitterVerified,
+          twitterInfo?.isVerified ?? existing.twitterVerified ?? args.twitterVerified,
         twitterFollowers:
           twitterInfo?.followers ?? existing.twitterFollowers,
         twitterFollowing:
