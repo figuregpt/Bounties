@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Compass, Plus, User, type LucideIcon } from "lucide-react";
+import { Compass, LogIn, Plus, User, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu, type ConnectedUser } from "./user-menu";
 
@@ -64,14 +64,27 @@ export function Sidebar({ user }: { user?: ConnectedUser | null }) {
 
       {/* ─── Bottom: account ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 px-3">
-        <div className="flex h-12 items-center gap-3 rounded-[var(--radius-button)] px-2">
-          <UserMenu user={user} />
-          {user && (
+        {user ? (
+          <div className="flex h-12 items-center gap-3 rounded-[var(--radius-button)] px-2">
+            <UserMenu user={user} />
             <SidebarLabel show={expanded} className="text-text-secondary">
               {user.displayName ?? `@${user.handle}`}
             </SidebarLabel>
-          )}
-        </div>
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            title="Sign in"
+            className="press flex h-12 items-center gap-3 rounded-[var(--radius-button)] bg-accent-primary text-[#100F16] transition-colors hover:bg-accent-hover"
+          >
+            <span className="grid size-12 shrink-0 place-items-center">
+              <LogIn className="size-[22px]" strokeWidth={2.5} />
+            </span>
+            <SidebarLabel show={expanded} className="font-medium">
+              Sign in
+            </SidebarLabel>
+          </Link>
+        )}
       </div>
     </motion.aside>
   );

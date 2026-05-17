@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { LogOut, Power, Settings, User as UserIcon, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +37,6 @@ export type ConnectedUser = {
 
 export function UserMenu({ user }: { user?: ConnectedUser | null }) {
   const router = useRouter();
-  const { status } = useSession();
   const {
     address: connectedAddress,
     isConnected,
@@ -52,7 +51,7 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
         onClick={() => router.push("/login")}
         className="press rounded-[var(--radius-button)] bg-accent-primary px-6 font-medium text-[#100F16] hover:bg-accent-hover dark:bg-accent-primary dark:text-[#100F16] dark:hover:bg-accent-hover"
       >
-        {status === "authenticated" ? "Continue" : "Connect"}
+        Sign in
       </Button>
     );
   }
