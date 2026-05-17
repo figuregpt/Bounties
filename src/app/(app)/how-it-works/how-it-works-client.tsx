@@ -9,9 +9,14 @@ import {
   Coins,
   Eye,
   Flame,
+  Gift,
+  Heart,
   Hourglass,
+  MessageCircle,
   PartyPopper,
+  Repeat2,
   Send,
+  Share2,
   Sparkles,
   Wallet,
   type LucideIcon,
@@ -23,7 +28,7 @@ import { cn } from "@/lib/utils";
 
    Two parallel narratives: creators run bounties, hunters earn rewards.
    Tabs let visitors jump straight to the side that matches them. Each
-   step pairs short copy with an inline SVG mockup that reuses the site's
+   step pairs short copy with an inline mockup that reuses the site's
    design tokens so it feels native, not stock.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -230,7 +235,7 @@ function StepCard({
   illustration: Illustration,
 }: Step & { index: number }) {
   return (
-    <article className="grid gap-4 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5 sm:grid-cols-[1fr_240px] sm:gap-6 sm:p-6">
+    <article className="grid gap-4 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5 sm:grid-cols-[1fr_280px] sm:gap-6 sm:p-6">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="grid size-7 place-items-center rounded-full bg-accent-soft font-mono text-small text-accent-text">
@@ -241,7 +246,7 @@ function StepCard({
         <h3 className="text-h3 font-medium">{title}</h3>
         <p className="text-small leading-relaxed text-text-secondary">{body}</p>
       </div>
-      <div className="rounded-[12px] bg-bg-base p-3 sm:p-4">
+      <div className="overflow-hidden rounded-[12px] bg-bg-base p-3">
         <Illustration />
       </div>
     </article>
@@ -249,230 +254,442 @@ function StepCard({
 }
 
 /* =========================================================================
-   SVG mockups — site UI
+   Mockups — designed to closely mirror the real product UI
    ========================================================================= */
+
+function MockAvatar({
+  letter,
+  size = 24,
+  tint = "accent",
+}: {
+  letter: string;
+  size?: number;
+  tint?: "accent" | "blue" | "neutral";
+}) {
+  const bg =
+    tint === "accent"
+      ? "bg-accent-soft text-accent-text"
+      : tint === "blue"
+        ? "bg-[#1D9BF0]/20 text-[#1D9BF0]"
+        : "bg-bg-elevated text-text-secondary";
+  return (
+    <span
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className={cn(
+        "inline-grid shrink-0 place-items-center rounded-full font-semibold",
+        bg,
+      )}
+    >
+      {letter}
+    </span>
+  );
+}
+
+/* ─────────────────────────── Hunter mockups ────────────────────────────── */
 
 function BountyCardMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="10" width="200" height="44" rx="8" fill="#23232E" />
-      <circle cx="22" cy="32" r="9" fill="#A89BFF" opacity="0.4" />
-      <rect x="36" y="22" width="80" height="6" rx="3" fill="#E8E8EE" opacity="0.7" />
-      <rect x="36" y="34" width="120" height="5" rx="2.5" fill="#7A7A8C" opacity="0.6" />
-      <rect x="10" y="64" width="200" height="64" rx="8" fill="#1F1F28" />
-      <rect x="20" y="74" width="60" height="6" rx="3" fill="#A89BFF" />
-      <rect x="20" y="86" width="100" height="5" rx="2.5" fill="#7A7A8C" opacity="0.6" />
-      <rect x="20" y="100" width="50" height="14" rx="7" fill="#3C3458" />
-      <rect x="28" y="104" width="34" height="6" rx="3" fill="#C8BFFF" />
-      <rect x="148" y="100" width="56" height="14" rx="7" fill="#A89BFF" />
-      <rect x="158" y="104" width="36" height="6" rx="3" fill="#1A1A22" />
-    </svg>
+    <div className="rounded-[12px] border border-border-default bg-bg-surface p-3">
+      <div className="flex items-start gap-2">
+        <MockAvatar letter="F" size={26} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 text-[11px] font-medium text-text-primary">
+            <span>@figuregpt</span>
+            <span className="grid size-2.5 place-items-center rounded-full bg-accent-primary text-[7px] text-[#100F16]">
+              ✓
+            </span>
+          </div>
+          <div className="text-[10px] text-text-tertiary">·  2h ago</div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-token-stable-bg/20 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums text-token-stable-text">
+          5 USDC
+        </span>
+      </div>
+      <p className="mt-2.5 line-clamp-2 text-[11px] leading-snug text-text-secondary">
+        Reply with your favorite Solana memecoin and a 🚀 emoji…
+      </p>
+      <div className="mt-2.5 flex items-center gap-2 text-[10px] text-text-tertiary">
+        <span className="font-mono tabular-nums">3 / 20 slots</span>
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-bg-elevated">
+          <div className="h-full w-[15%] rounded-full bg-accent-primary" />
+        </div>
+        <span>23h left</span>
+      </div>
+      <button
+        type="button"
+        className="mt-2.5 flex h-7 w-full items-center justify-center gap-1 rounded-[var(--radius-button)] bg-accent-primary text-[10px] font-medium text-[#100F16]"
+      >
+        Hunt now <ArrowRight className="size-2.5" strokeWidth={2.5} />
+      </button>
+    </div>
   );
 }
 
 function BountyDetailMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="10" width="200" height="40" rx="8" fill="#23232E" />
-      <rect x="20" y="18" width="60" height="6" rx="3" fill="#E8E8EE" opacity="0.7" />
-      <rect x="20" y="30" width="140" height="5" rx="2.5" fill="#7A7A8C" opacity="0.6" />
-      <rect x="10" y="58" width="200" height="36" rx="8" fill="#1F1F28" />
-      <rect x="20" y="68" width="50" height="6" rx="3" fill="#7A7A8C" opacity="0.6" />
-      <rect x="20" y="80" width="90" height="6" rx="3" fill="#E8E8EE" opacity="0.7" />
-      <rect x="10" y="102" width="200" height="26" rx="8" fill="#A89BFF" />
-      <rect x="76" y="112" width="68" height="6" rx="3" fill="#1A1A22" />
-      <polygon points="158,115 162,112 162,118" fill="#1A1A22" />
-    </svg>
+    <div className="space-y-2">
+      <div className="rounded-[10px] border border-border-default bg-bg-surface px-2.5 py-2">
+        <div className="flex items-center gap-1 text-[10px] text-text-tertiary">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/20 px-1.5 py-0.5 font-medium text-success">
+            <span className="size-1 rounded-full bg-success" /> active
+          </span>
+          <span>·  23h left</span>
+        </div>
+        <p className="mt-1 line-clamp-2 text-[11px] text-text-primary">
+          Reply with your favorite Solana memecoin and a 🚀
+        </p>
+      </div>
+      <div className="rounded-[10px] border border-accent-primary/40 bg-accent-soft px-3 py-2.5">
+        <div className="text-[9px] uppercase tracking-wider text-accent-text/80">
+          Ready to hunt
+        </div>
+        <div className="mt-0.5 text-[11px] text-accent-text">
+          Complete the actions and claim 5 USDC.
+        </div>
+      </div>
+      <button
+        type="button"
+        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-button)] bg-accent-primary text-[11px] font-medium text-[#100F16]"
+      >
+        Hunt now <ArrowRight className="size-3" strokeWidth={2.5} />
+      </button>
+    </div>
   );
 }
 
 function TweetReplyMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#000" />
-      <circle cx="22" cy="22" r="9" fill="#1D9BF0" opacity="0.6" />
-      <rect x="36" y="14" width="60" height="6" rx="3" fill="#fff" opacity="0.9" />
-      <rect x="36" y="24" width="40" height="5" rx="2.5" fill="#71767B" />
-      <rect x="36" y="40" width="170" height="5" rx="2.5" fill="#E7E9EA" opacity="0.85" />
-      <rect x="36" y="50" width="140" height="5" rx="2.5" fill="#E7E9EA" opacity="0.85" />
-      <line x1="22" y1="32" x2="22" y2="78" stroke="#2F3336" strokeWidth="2" />
-      <circle cx="22" cy="86" r="9" fill="#A89BFF" />
-      <rect x="36" y="78" width="60" height="6" rx="3" fill="#fff" opacity="0.9" />
-      <rect x="36" y="88" width="40" height="5" rx="2.5" fill="#71767B" />
-      <rect x="36" y="104" width="160" height="5" rx="2.5" fill="#E7E9EA" opacity="0.9" />
-      <rect x="36" y="114" width="110" height="5" rx="2.5" fill="#E7E9EA" opacity="0.9" />
-    </svg>
+    <div className="rounded-[12px] bg-black p-3 font-sans text-white">
+      {/* Original tweet */}
+      <div className="flex gap-2">
+        <div className="flex flex-col items-center">
+          <MockAvatar letter="F" tint="blue" size={28} />
+          <div className="mt-1 w-px flex-1 bg-[#2F3336]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="font-semibold">figure</span>
+            <span className="text-[#71767B]">@figuregpt · 2h</span>
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug">
+            Reply with your favorite Solana memecoin 🚀
+          </p>
+        </div>
+      </div>
+      {/* Reply */}
+      <div className="mt-2 flex gap-2">
+        <MockAvatar letter="Y" size={28} tint="accent" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="font-semibold">yigo</span>
+            <span className="text-[#71767B]">@0xyigo · now</span>
+          </div>
+          <div className="text-[10px] text-[#71767B]">
+            Replying to <span className="text-[#1D9BF0]">@figuregpt</span>
+          </div>
+          <p className="mt-0.5 text-[11px] leading-snug">lets go 🚀</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function VerifyResultMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <circle cx="110" cy="48" r="22" fill="#2BB36A" opacity="0.2" />
-      <circle cx="110" cy="48" r="14" fill="#2BB36A" />
-      <path
-        d="M104 48 L109 53 L117 43"
-        stroke="#0E0E10"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <rect x="50" y="84" width="120" height="6" rx="3" fill="#E8E8EE" />
-      <rect x="40" y="100" width="140" height="5" rx="2.5" fill="#7A7A8C" opacity="0.6" />
-      <rect x="62" y="116" width="96" height="14" rx="7" fill="#3C3458" />
-      <rect x="76" y="120" width="68" height="6" rx="3" fill="#C8BFFF" />
-    </svg>
+    <div className="space-y-2 rounded-[12px] border border-success/40 bg-success/10 p-3 text-center">
+      <div className="mx-auto grid size-9 place-items-center rounded-full bg-success/20">
+        <CheckCircle2 className="size-5 text-success" strokeWidth={2.5} />
+      </div>
+      <div>
+        <div className="text-[11px] font-medium text-text-primary">
+          Reply verified
+        </div>
+        <div className="mt-0.5 text-[10px] text-text-tertiary">
+          Slot 4 of 20 · 5 USDC reserved
+        </div>
+      </div>
+      <div className="inline-flex h-6 w-full items-center justify-center rounded-[var(--radius-button)] bg-bg-elevated text-[10px] font-medium text-text-secondary">
+        Waiting for bounty to end
+      </div>
+    </div>
   );
 }
 
 function ClaimCenterMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="10" width="200" height="62" rx="10" fill="#A89BFF" />
-      <rect x="22" y="22" width="80" height="6" rx="3" fill="#1A1A22" />
-      <rect x="22" y="34" width="60" height="14" rx="3" fill="#1A1A22" />
-      <rect x="22" y="56" width="50" height="5" rx="2.5" fill="#1A1A22" opacity="0.7" />
-      <rect x="138" y="46" width="60" height="18" rx="9" fill="#1A1A22" />
-      <rect x="152" y="52" width="34" height="6" rx="3" fill="#A89BFF" />
-      <rect x="10" y="82" width="95" height="48" rx="8" fill="#1F1F28" />
-      <rect x="20" y="92" width="60" height="6" rx="3" fill="#E8E8EE" opacity="0.6" />
-      <rect x="20" y="104" width="40" height="14" rx="3" fill="#E8E8EE" />
-      <rect x="115" y="82" width="95" height="48" rx="8" fill="#1F1F28" />
-      <rect x="125" y="92" width="60" height="6" rx="3" fill="#E8E8EE" opacity="0.6" />
-      <rect x="125" y="104" width="40" height="14" rx="3" fill="#E8E8EE" />
-    </svg>
+    <div className="space-y-2">
+      <div className="rounded-[12px] bg-accent-primary p-3 text-[#100F16]">
+        <div className="text-[9px] font-medium uppercase tracking-wider opacity-80">
+          Pending rewards
+        </div>
+        <div className="mt-1 flex items-end justify-between gap-2">
+          <div>
+            <div className="text-2xl font-bold leading-none">$10</div>
+            <div className="mt-1 text-[9px] opacity-75">across 2 bounties</div>
+          </div>
+          <Gift className="size-7 opacity-60" strokeWidth={1.75} />
+        </div>
+        <button
+          type="button"
+          className="mt-2.5 flex h-7 w-full items-center justify-center gap-1 rounded-[var(--radius-pill)] bg-[#100F16] text-[10px] font-medium text-accent-primary"
+        >
+          Claim all
+        </button>
+      </div>
+      <div className="rounded-[10px] border border-border-default bg-bg-surface px-2.5 py-2">
+        <div className="flex items-center gap-2">
+          <MockAvatar letter="$" size={20} />
+          <div className="min-w-0 flex-1 text-[10px]">
+            <div className="font-medium text-text-primary">@figuregpt</div>
+            <div className="text-text-tertiary">Verified · 5 USDC</div>
+          </div>
+          <span className="rounded-[var(--radius-pill)] bg-accent-primary px-2 py-0.5 text-[9px] font-medium text-[#100F16]">
+            Claim
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
+/* ─────────────────────────── Creator mockups ───────────────────────────── */
+
 function TweetCardMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#000" />
-      <circle cx="26" cy="26" r="12" fill="#1D9BF0" opacity="0.6" />
-      <rect x="44" y="16" width="70" height="6" rx="3" fill="#fff" opacity="0.9" />
-      <rect x="44" y="28" width="50" height="5" rx="2.5" fill="#71767B" />
-      <rect x="16" y="50" width="188" height="5" rx="2.5" fill="#E7E9EA" opacity="0.9" />
-      <rect x="16" y="62" width="160" height="5" rx="2.5" fill="#E7E9EA" opacity="0.9" />
-      <rect x="16" y="74" width="120" height="5" rx="2.5" fill="#E7E9EA" opacity="0.9" />
-      <rect x="16" y="96" width="50" height="5" rx="2.5" fill="#71767B" />
-      <rect x="80" y="96" width="50" height="5" rx="2.5" fill="#71767B" />
-      <rect x="144" y="96" width="50" height="5" rx="2.5" fill="#71767B" />
-      <rect x="16" y="116" width="188" height="14" rx="7" fill="#1D9BF0" opacity="0.85" />
-      <rect x="92" y="121" width="36" height="4" rx="2" fill="#000" />
-    </svg>
+    <div className="rounded-[12px] bg-black p-3 font-sans text-white">
+      <div className="flex items-start gap-2">
+        <MockAvatar letter="B" tint="blue" size={32} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="font-semibold">bounties.fm</span>
+            <span className="grid size-3 place-items-center rounded-full bg-[#1D9BF0] text-[7px] font-bold text-white">
+              ✓
+            </span>
+            <span className="text-[#71767B]">@bountiesfm · 5m</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-snug">
+            Reply with your favorite Solana memecoin and a 🚀 emoji
+          </p>
+        </div>
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] text-[#71767B]">
+        <span className="inline-flex items-center gap-1">
+          <MessageCircle className="size-2.5" /> 12
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Repeat2 className="size-2.5" /> 5
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Heart className="size-2.5" /> 34
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Share2 className="size-2.5" />
+        </span>
+      </div>
+    </div>
   );
 }
 
 function RulesMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="12" width="120" height="6" rx="3" fill="#E8E8EE" />
-      <rect x="10" y="32" width="60" height="14" rx="7" fill="#3C3458" />
-      <rect x="20" y="36" width="40" height="6" rx="3" fill="#C8BFFF" />
-      <rect x="78" y="32" width="60" height="14" rx="7" fill="#23232E" />
-      <rect x="88" y="36" width="40" height="6" rx="3" fill="#7A7A8C" />
-      <rect x="10" y="58" width="80" height="5" rx="2.5" fill="#7A7A8C" />
-      <rect x="10" y="72" width="44" height="14" rx="7" fill="#2BB36A" opacity="0.2" />
-      <rect x="20" y="76" width="24" height="6" rx="3" fill="#2BB36A" />
-      <rect x="62" y="72" width="44" height="14" rx="7" fill="#2BB36A" opacity="0.2" />
-      <rect x="72" y="76" width="24" height="6" rx="3" fill="#2BB36A" />
-      <rect x="10" y="96" width="80" height="5" rx="2.5" fill="#7A7A8C" />
-      <rect x="10" y="110" width="44" height="14" rx="7" fill="#E25C5C" opacity="0.2" />
-      <rect x="20" y="114" width="24" height="6" rx="3" fill="#E25C5C" />
-      <rect x="62" y="110" width="34" height="14" rx="7" fill="#E25C5C" opacity="0.2" />
-      <rect x="72" y="114" width="14" height="6" rx="3" fill="#E25C5C" />
-    </svg>
+    <div className="space-y-2.5 rounded-[10px] border border-border-default bg-bg-surface p-3">
+      <div>
+        <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+          <span className="grid size-3 place-items-center rounded-full bg-success/20 text-success">
+            ✓
+          </span>
+          Must include all of
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          <Chip text="lets go" tone="accent" />
+          <Chip text="🚀" tone="accent" />
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+          <span className="grid size-3 place-items-center rounded-full bg-danger/20 text-danger">
+            ✕
+          </span>
+          Cannot include
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          <Chip text="scam" tone="danger" />
+          <Chip text="rug" tone="danger" />
+        </div>
+      </div>
+      <div className="flex items-center gap-1 rounded-[6px] bg-bg-elevated px-2 py-1.5 text-[9px] text-text-tertiary">
+        <span className="text-text-secondary">Min length:</span>{" "}
+        <span className="font-mono tabular-nums">10 chars</span>
+      </div>
+    </div>
+  );
+}
+
+function Chip({
+  text,
+  tone,
+}: {
+  text: string;
+  tone: "accent" | "danger";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-[var(--radius-pill)] px-2 py-0.5 text-[10px] font-medium",
+        tone === "accent"
+          ? "bg-accent-soft text-accent-text"
+          : "bg-danger/20 text-danger",
+      )}
+    >
+      {text}
+    </span>
   );
 }
 
 function RewardMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="12" width="200" height="36" rx="8" fill="#23232E" />
-      <rect x="20" y="22" width="80" height="6" rx="3" fill="#7A7A8C" />
-      <rect x="20" y="34" width="56" height="8" rx="3" fill="#E8E8EE" />
-      <text x="180" y="36" fontFamily="monospace" fontSize="11" fill="#2BB36A" fontWeight="600">USDC</text>
-      <rect x="10" y="58" width="200" height="36" rx="8" fill="#23232E" />
-      <rect x="20" y="68" width="60" height="6" rx="3" fill="#7A7A8C" />
-      <rect x="20" y="80" width="44" height="8" rx="3" fill="#E8E8EE" />
-      <text x="170" y="82" fontFamily="monospace" fontSize="11" fill="#A89BFF" fontWeight="600">slots</text>
-      <rect x="10" y="104" width="200" height="22" rx="8" fill="#3C3458" />
-      <rect x="20" y="111" width="60" height="6" rx="3" fill="#C8BFFF" />
-      <text x="150" y="119" fontFamily="monospace" fontSize="11" fill="#A89BFF" fontWeight="600">≈ $50.00</text>
-    </svg>
+    <div className="space-y-2 rounded-[10px] border border-border-default bg-bg-surface p-3">
+      <div className="flex items-center justify-between rounded-[8px] bg-bg-elevated px-2 py-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-text-tertiary">
+          Token
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-token-stable-bg/20 px-2 py-0.5 text-[10px] font-medium text-token-stable-text">
+          <span className="grid size-3 place-items-center rounded-full bg-token-stable-text text-[7px] font-bold text-[#0E0E10]">
+            $
+          </span>
+          USDC
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-[8px] bg-bg-elevated p-2">
+          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
+            Per hunter
+          </div>
+          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+            5
+          </div>
+        </div>
+        <div className="rounded-[8px] bg-bg-elevated p-2">
+          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
+            Slots
+          </div>
+          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+            20
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between rounded-[8px] bg-accent-soft px-2 py-1.5">
+        <span className="text-[10px] font-medium text-accent-text">
+          Total pool
+        </span>
+        <span className="font-mono text-[11px] font-semibold tabular-nums text-accent-text">
+          100 USDC · ≈ $100
+        </span>
+      </div>
+    </div>
   );
 }
 
 function WalletPromptMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#0E0E10" />
-      <rect x="20" y="20" width="180" height="100" rx="12" fill="#1A1A22" />
-      <rect x="32" y="32" width="14" height="14" rx="3" fill="#AB9FF2" />
-      <rect x="50" y="35" width="60" height="6" rx="3" fill="#E8E8EE" />
-      <rect x="32" y="56" width="156" height="5" rx="2.5" fill="#7A7A8C" />
-      <rect x="32" y="68" width="120" height="5" rx="2.5" fill="#7A7A8C" />
-      <rect x="32" y="88" width="64" height="20" rx="8" fill="#23232E" />
-      <rect x="48" y="94" width="32" height="6" rx="3" fill="#E8E8EE" opacity="0.6" />
-      <rect x="104" y="88" width="84" height="20" rx="8" fill="#AB9FF2" />
-      <rect x="124" y="94" width="44" height="6" rx="3" fill="#0E0E10" />
-    </svg>
+    <div className="rounded-[12px] border border-[#AB9FF2]/30 bg-[#181725] p-3 text-white">
+      <div className="flex items-center gap-1.5">
+        <span className="grid size-5 place-items-center rounded-md bg-[#AB9FF2]">
+          <span className="text-[10px] font-bold text-[#0E0E10]">P</span>
+        </span>
+        <span className="text-[10px] font-semibold">Phantom</span>
+      </div>
+      <div className="mt-2 text-[11px] font-semibold">Approve transaction</div>
+      <div className="mt-2 space-y-1 rounded-[6px] bg-black/40 p-2 text-[10px]">
+        <div className="flex justify-between">
+          <span className="text-[#9F9CA8]">Send</span>
+          <span className="font-mono tabular-nums">100 USDC</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[#9F9CA8]">Creation fee</span>
+          <span className="font-mono tabular-nums">1 USDC</span>
+        </div>
+        <div className="border-t border-white/10 pt-1 flex justify-between font-semibold">
+          <span>Total</span>
+          <span className="font-mono tabular-nums">101 USDC</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button className="h-7 rounded-[6px] bg-white/10 text-[10px] font-medium">
+          Reject
+        </button>
+        <button className="h-7 rounded-[6px] bg-[#AB9FF2] text-[10px] font-medium text-[#0E0E10]">
+          Confirm
+        </button>
+      </div>
+    </div>
   );
 }
 
 function ActivityFeedMock() {
+  const rows = [
+    { handle: "@degen42", amount: "5 USDC", action: "verified" },
+    { handle: "@solgirl", amount: "5 USDC", action: "verified" },
+    { handle: "@mooner", amount: "5 USDC", action: "claimed" },
+  ];
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <rect x="10" y="10" width="200" height="22" rx="8" fill="#23232E" />
-      <circle cx="22" cy="21" r="3" fill="#2BB36A">
-        <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />
-      </circle>
-      <rect x="32" y="18" width="80" height="6" rx="3" fill="#E8E8EE" opacity="0.8" />
-      {[42, 64, 86, 108].map((y, i) => (
-        <g key={i}>
-          <rect x="10" y={y} width="200" height="20" rx="6" fill="#1F1F28" />
-          <circle cx="22" cy={y + 10} r="6" fill="#A89BFF" opacity="0.5" />
-          <rect x="34" y={y + 6} width="70" height="5" rx="2.5" fill="#E8E8EE" opacity="0.7" />
-          <rect x="34" y={y + 14} width="50" height="3" rx="1.5" fill="#7A7A8C" />
-          <rect x="166" y={y + 6} width="36" height="10" rx="5" fill="#2BB36A" opacity="0.2" />
-          <rect x="174" y={y + 9} width="20" height="4" rx="2" fill="#2BB36A" />
-        </g>
-      ))}
-    </svg>
+    <div className="rounded-[10px] border border-border-default bg-bg-surface">
+      <div className="flex items-center gap-1.5 border-b border-border-subtle px-2.5 py-1.5">
+        <span className="relative grid size-1.5 place-items-center">
+          <span className="absolute inset-0 animate-ping rounded-full bg-success/50" />
+          <span className="size-1 rounded-full bg-success" />
+        </span>
+        <span className="text-[10px] font-medium text-text-primary">
+          Live activity
+        </span>
+      </div>
+      <ul className="divide-y divide-border-subtle">
+        {rows.map((r, i) => (
+          <li key={i} className="flex items-center gap-1.5 px-2 py-1.5">
+            <MockAvatar letter={r.handle.charAt(1).toUpperCase()} size={16} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[10px] text-text-primary">
+                <span className="font-medium">{r.handle}</span>{" "}
+                <span className="text-text-tertiary">{r.action}</span>
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-token-stable-bg/20 px-1.5 py-0.5 font-mono text-[9px] font-medium tabular-nums text-token-stable-text">
+              {r.amount}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
 function CompletedMock() {
   return (
-    <svg viewBox="0 0 220 140" className="w-full">
-      <rect x="0" y="0" width="220" height="140" rx="10" fill="#1A1A22" />
-      <circle cx="110" cy="42" r="18" fill="#A89BFF" opacity="0.2" />
-      <circle cx="110" cy="42" r="11" fill="#A89BFF" />
-      <text
-        x="110"
-        y="47"
-        fontFamily="sans-serif"
-        fontSize="14"
-        fontWeight="700"
-        fill="#1A1A22"
-        textAnchor="middle"
-      >
-        ✓
-      </text>
-      <rect x="42" y="74" width="136" height="7" rx="3.5" fill="#E8E8EE" />
-      <rect x="36" y="90" width="148" height="5" rx="2.5" fill="#7A7A8C" />
-      <rect x="36" y="108" width="68" height="18" rx="8" fill="#23232E" />
-      <rect x="48" y="113" width="44" height="6" rx="3" fill="#E8E8EE" opacity="0.6" />
-      <rect x="114" y="108" width="68" height="18" rx="8" fill="#3C3458" />
-      <rect x="124" y="113" width="48" height="6" rx="3" fill="#C8BFFF" />
-    </svg>
+    <div className="space-y-2 rounded-[12px] border border-success/40 bg-success/10 p-3 text-center">
+      <div className="mx-auto grid size-9 place-items-center rounded-full bg-success/20">
+        <CheckCircle2 className="size-5 text-success" strokeWidth={2.5} />
+      </div>
+      <div className="text-[11px] font-medium text-text-primary">
+        Bounty completed
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-[8px] bg-bg-surface p-2">
+          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
+            Slots filled
+          </div>
+          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+            18 / 20
+          </div>
+        </div>
+        <div className="rounded-[8px] bg-bg-surface p-2">
+          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
+            Refunded
+          </div>
+          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+            10 USDC
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
