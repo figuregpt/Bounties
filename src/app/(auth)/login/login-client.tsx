@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader } from "lucide-react";
@@ -36,18 +36,18 @@ export function LoginClient() {
 }
 
 function LoginContent() {
-  const router = useRouter();
   const params = useSearchParams();
   const { status } = useSession();
   const [signingIn, setSigningIn] = useState(false);
   const callbackUrl = params?.get("callbackUrl") ?? "/discover";
   const errorParam = params?.get("error");
 
-  useEffect(() => {
-    if (status === "authenticated") {
-      router.replace(callbackUrl);
-    }
-  }, [status, callbackUrl, router]);
+  // No client-side auto-redirect on `status === "authenticated"`. The
+  // server (page.tsx) has already checked the DB and only rendered us
+  // when there's no `users` row — so a stale NextAuth JWT cookie with
+  // no matching DB user (e.g., after a DB reset) would otherwise bounce
+  // the visitor straight back to /discover before they can click the
+  // Sign in button. Clicking 'Continue with X' refreshes the session.
 
   const isWorking = signingIn || status === "loading";
 
