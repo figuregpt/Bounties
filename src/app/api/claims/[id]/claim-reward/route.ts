@@ -87,19 +87,7 @@ export async function POST(
       { status: 403 },
     );
   }
-  if (
-    claim.claimWindowEndsAt &&
-    claim.claimWindowEndsAt.getTime() < Date.now()
-  ) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Claim window expired",
-        errorCode: "claim_window_expired",
-      },
-      { status: 410 },
-    );
-  }
+  // (claim window removed — verified claims stay claimable indefinitely)
   if (row.bountyStatus === "cancelled" || row.bountyStatus === "broken") {
     return NextResponse.json(
       {

@@ -25,8 +25,6 @@ import type { Bounty, Claim } from "@/types/database";
  * Called by the bounty-completion cron (every 60s); not user-triggered.
  */
 
-const CLAIM_WINDOW_HOURS = 48;
-
 export type FinalVerificationSummary = {
   bountyId: string;
   totalProcessed: number;
@@ -139,16 +137,14 @@ async function finalVerifyClaim(
   const now = new Date();
 
   if (result.allPassed) {
-    const claimWindowEndsAt = new Date(
-      now.getTime() + CLAIM_WINDOW_HOURS * 3_600_000,
-    );
     await db
       .update(claims)
       .set({
         status: "verified",
         finalVerifiedAt: now,
         finalCheckAttemptedAt: now,
-        claimWindowEndsAt,
+        // Claim stays claimable indefinitely — no window expiry.
+        claimWindowEndsAt: null,
         // F2 side-effect: persist any boolean flips the recheck made
         // (e.g. a missing replyText is now populated from the fresh fetch).
         ...result.patch,
