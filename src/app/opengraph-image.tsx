@@ -65,7 +65,7 @@ export default async function RootOgImage() {
           </div>
         </div>
 
-        {/* Hero copy — pinned to the middle */}
+        {/* Hero copy — pinned to the bottom */}
         <div
           style={{
             marginTop: "auto",
@@ -95,35 +95,8 @@ export default async function RootOgImage() {
           >
             earn tokens.
           </div>
-          <div style={{ fontSize: 30, color: "#9B9BA5", marginTop: 14 }}>
+          <div style={{ fontSize: 32, color: "#9B9BA5", marginTop: 16 }}>
             Solana-backed bounties for every reply, retweet, and follow.
-          </div>
-        </div>
-
-        {/* Bottom: CTA pill + url */}
-        <div
-          style={{
-            marginTop: "auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div
-            style={{
-              background: "#AB9FF2",
-              color: "#100F16",
-              padding: "20px 40px",
-              borderRadius: 9999,
-              fontSize: 32,
-              fontWeight: 600,
-              display: "flex",
-            }}
-          >
-            Start hunting →
-          </div>
-          <div style={{ fontSize: 22, color: "#6B6B75", display: "flex" }}>
-            bounties.fm
           </div>
         </div>
       </div>
