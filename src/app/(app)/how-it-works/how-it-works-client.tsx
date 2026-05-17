@@ -163,12 +163,12 @@ const CREATOR_STEPS: Step[] = [
   },
   {
     title: "Watch hunters fill the slots",
-    body: "Real-time activity feed shows verifications as they happen. When the bounty ends, unclaimed rewards refund to your wallet automatically via the completion cron.",
+    body: "Real-time activity feed shows verifications as they happen — every reply, retweet, and follow lands here within seconds of confirmation on Twitter.",
     illustration: ActivityFeedMock,
   },
   {
-    title: "Done — campaign closed",
-    body: "Final verification re-checks every claim against Twitter (detects deletions) before payouts settle. You see the analytics on the bounty page; hunters see the reward in their Claim tab.",
+    title: "Unclaimed slots refund to your wallet",
+    body: "When the campaign ends, the completion cron audits every verified claim against Twitter (catching deleted replies) and pays out only the valid ones. Whatever's left — empty slots, withdrawn actions — gets sent back to your wallet on-chain. You only pay for the engagement you actually got.",
     illustration: CompletedMock,
   },
 ];
@@ -641,29 +641,36 @@ function ActivityFeedMock() {
 
 function CompletedMock() {
   return (
-    <div className="space-y-2 rounded-[12px] border border-success/40 bg-success/10 p-3 text-center">
-      <div className="mx-auto grid size-9 place-items-center rounded-full bg-success/20">
-        <CheckCircle2 className="size-5 text-success" strokeWidth={2.5} />
-      </div>
-      <div className="text-[11px] font-medium text-text-primary">
-        Bounty completed
-      </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <div className="rounded-[8px] bg-bg-surface p-2">
-          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
-            Slots filled
-          </div>
-          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+    <div className="space-y-2">
+      <div className="rounded-[10px] border border-border-default bg-bg-surface px-2.5 py-2">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="text-text-tertiary">Slots filled</span>
+          <span className="font-mono font-medium tabular-nums text-text-primary">
             18 / 20
-          </div>
+          </span>
         </div>
-        <div className="rounded-[8px] bg-bg-surface p-2">
-          <div className="text-[8px] uppercase tracking-wider text-text-tertiary">
-            Refunded
-          </div>
-          <div className="mt-0.5 font-mono text-sm font-medium text-text-primary">
+        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-bg-elevated">
+          <div className="h-full w-[90%] rounded-full bg-success" />
+        </div>
+        <div className="mt-1 flex items-center justify-between text-[9px] text-text-tertiary">
+          <span>90 USDC paid to hunters</span>
+          <span>2 unfilled</span>
+        </div>
+      </div>
+      <div className="rounded-[12px] border border-accent-primary/40 bg-accent-soft p-3">
+        <div className="flex items-center justify-between text-[10px] font-medium text-accent-text">
+          <span className="flex items-center gap-1.5">
+            <span className="grid size-4 place-items-center rounded-full bg-accent-primary text-[8px] text-[#100F16]">
+              ↻
+            </span>
+            Refunded to creator
+          </span>
+          <span className="font-mono text-[12px] font-semibold tabular-nums">
             10 USDC
-          </div>
+          </span>
+        </div>
+        <div className="mt-1 text-[9px] text-accent-text/80">
+          Sent on-chain · tx confirmed
         </div>
       </div>
     </div>
