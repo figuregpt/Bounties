@@ -11,7 +11,6 @@ import {
   Flame,
   Hourglass,
   SlidersHorizontal,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -268,7 +267,7 @@ function SortDropdown({
   return (
     <DropdownMenu>
       <DropdownTrigger>
-        <DropdownTriggerButton icon={Sparkles} label="Sort">
+        <DropdownTriggerButton label="Sort">
           {active?.label ?? "Newest"}
         </DropdownTriggerButton>
       </DropdownTrigger>
