@@ -52,7 +52,7 @@ export default async function ProfileOgImage({
             fontWeight: 500,
           }}
         >
-          @{handle} · bounties.fm
+          {`@${handle} · bounties.fm`}
         </div>
       ),
       size,
@@ -139,7 +139,7 @@ export default async function ProfileOgImage({
                 {truncate(displayName, 22)}
               </div>
               <div style={{ fontSize: 32, color: "#9B9BA5" }}>
-                @{truncate(data.user.handle, 22)}
+                {`@${truncate(data.user.handle, 22)}`}
               </div>
             </div>
           </div>
@@ -171,7 +171,7 @@ export default async function ProfileOgImage({
             color: "#6B6B75",
           }}
         >
-          bounties.fm/profile/{truncate(data.user.handle, 24)}
+          {`bounties.fm/profile/${truncate(data.user.handle, 24)}`}
         </div>
       </div>
     ),

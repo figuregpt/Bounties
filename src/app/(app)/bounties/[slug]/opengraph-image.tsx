@@ -128,10 +128,10 @@ export default async function BountyOgImage({
                   color: "#AB9FF2",
                 }}
               >
-                {reward} {symbol}
+                {`${reward} ${symbol}`}
               </div>
               <div style={{ fontSize: 32, color: "#9B9BA5" }}>
-                per hunter · {maxSlots} slots
+                {`per hunter · ${maxSlots} slots`}
               </div>
             </div>
           </div>
@@ -146,11 +146,11 @@ export default async function BountyOgImage({
             }}
           >
             <span style={{ color: "#EDEDF0" }}>
-              by @{truncateHandle(creator)}
+              {`by @${truncateHandle(creator)}`}
             </span>
             <span style={{ color: "#3F3F4A" }}>·</span>
             <span style={{ color: "#7BC768" }}>
-              {slotsClaimed}/{maxSlots} claimed
+              {`${slotsClaimed}/${maxSlots} claimed`}
             </span>
           </div>
         </div>
