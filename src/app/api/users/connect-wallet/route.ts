@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -74,7 +74,25 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date();
-  await getDb()
+  const db = getDb();
+
+  // The `wallet_address` column is UNIQUE — if the address is already
+  // bound to a different user (the same human can run multiple Twitter
+  // accounts against one wallet, especially in dev), detach it from
+  // them first so this user's update can succeed. There's no exploit
+  // angle: rewards go to the wallet itself, so "stealing" someone
+  // else's wallet binding only ever helps the wallet's actual owner.
+  await db
+    .update(users)
+    .set({ walletAddress: null, updatedAt: now })
+    .where(
+      and(
+        eq(users.walletAddress, parsed.data.walletAddress),
+        ne(users.id, user.id),
+      ),
+    );
+
+  await db
     .update(users)
     .set({
       walletAddress: parsed.data.walletAddress,
