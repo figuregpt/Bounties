@@ -204,6 +204,15 @@ export async function POST(
     );
   }
 
+  /* ---- Net the platform fee ---------------------------------------- */
+  // Reward amount captured on the bounty is the GROSS payout — the
+  // 5% platform fee (PLATFORM_FEE_BPS) stays in the treasury so the
+  // hunter receives net. The fee row in `platform_revenue` records
+  // the same amount we're holding back, for buyback accounting.
+  const grossReward = Number(claim.rewardAmount);
+  const feeAmount = (grossReward * PLATFORM_FEE_BPS) / 10_000;
+  const netReward = grossReward - feeAmount;
+
   /* ---- Send the reward --------------------------------------------- */
   // sendReward validates recipient (on-curve), pre-flights treasury
   // balance, then retries up to 3x with backoff. We pass the bounty's
@@ -214,7 +223,7 @@ export async function POST(
     toWalletAddress: recipientWallet,
     tokenMint: claim.rewardTokenMint,
     tokenSymbol: claim.rewardTokenSymbol,
-    amount: Number(claim.rewardAmount),
+    amount: netReward,
     decimals: row.bountyTokenDecimals,
     reference: `claim:${claim.id}`,
     claimId: claim.id,
@@ -289,13 +298,12 @@ export async function POST(
     .where(eq(bounties.id, claim.bountyId));
 
   /* ---- Platform fee row -------------------------------------------- */
-  // 5% of the reward, recorded for the buyback pipeline. Wrapped so a
-  // logging failure can't roll back the on-chain success.
-  const rewardAmount = Number(claim.rewardAmount);
+  // Fee was already deducted from the on-chain transfer above. This
+  // just records it for the buyback pipeline accounting. Wrapped so
+  // a logging failure can't roll back the on-chain success.
   const rewardAmountUsd = claim.rewardAmountUsd
     ? Number(claim.rewardAmountUsd)
     : 0;
-  const feeAmount = (rewardAmount * PLATFORM_FEE_BPS) / 10_000;
   const feeAmountUsd = (rewardAmountUsd * PLATFORM_FEE_BPS) / 10_000;
   if (feeAmount > 0) {
     try {
