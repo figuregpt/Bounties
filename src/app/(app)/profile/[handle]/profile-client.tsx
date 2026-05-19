@@ -47,7 +47,6 @@ export function ProfileClient({
   const {
     address: connectedWallet,
     isConnected,
-    walletName,
     openConnectModal,
   } = useWalletConnection();
 
@@ -67,19 +66,10 @@ export function ProfileClient({
       claimId: string,
     ): Promise<{ ok: true; signature?: string } | { ok: false; error: string }> => {
       try {
-        if (isConnected && connectedWallet) {
-          // Idempotent — server no-ops if unchanged.
-          await fetch("/api/users/connect-wallet", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              walletAddress: connectedWallet,
-              provider: walletName,
-            }),
-          }).catch(() => {});
-        }
         const res = await fetch(`/api/claims/${claimId}/claim-reward`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress: connectedWallet }),
         });
         const body = (await res.json()) as
           | { ok: true; tx?: { signature: string; mock: boolean } }
@@ -98,7 +88,7 @@ export function ProfileClient({
         };
       }
     },
-    [isConnected, connectedWallet, walletName],
+    [connectedWallet],
   );
 
   const handleSingleClaim = useCallback(

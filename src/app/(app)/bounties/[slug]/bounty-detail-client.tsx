@@ -88,7 +88,6 @@ export function BountyDetailClient({
   const {
     address: connectedWallet,
     isConnected,
-    walletName,
     openConnectModal,
   } = useWalletConnection();
   const [huntersOpen, setHuntersOpen] = useState(false);
@@ -120,9 +119,9 @@ export function BountyDetailClient({
   const handleClaimReward = async () => {
     const effectiveClaim = hunt.claim ?? claim;
     if (!effectiveClaim) return;
-    // Reward goes to user.walletAddress server-side. If the hunter
-    // hasn't connected a wallet yet, prompt them now and save whatever
-    // they pick before kicking off the payout.
+    // Reward lands in whatever wallet the hunter has connected RIGHT
+    // NOW — the server takes `walletAddress` from the request body,
+    // no sticky DB binding needed.
     if (!isConnected || !connectedWallet) {
       setActionMessage(
         "Connect a wallet (Phantom or Solflare) — that's where your reward will land.",
@@ -133,20 +132,13 @@ export function BountyDetailClient({
     setClaimingReward(true);
     setActionMessage("Sending reward to your wallet…");
     try {
-      // Idempotent on the server when unchanged; cheap to call every time.
-      await fetch("/api/users/connect-wallet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddress: connectedWallet,
-          provider: walletName,
-        }),
-      }).catch((err) => {
-        console.warn("[claim] connect-wallet save failed (continuing):", err);
-      });
       const res = await fetch(
         `/api/claims/${effectiveClaim.id}/claim-reward`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress: connectedWallet }),
+        },
       );
       const body = (await res.json()) as {
         ok: boolean;

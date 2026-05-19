@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
@@ -9,9 +10,16 @@ import {
   users,
 } from "@/lib/db/schema";
 import { sendReward } from "@/lib/solana/treasury";
+import { isValidSolanaWallet } from "@/lib/solana/verify-tx";
 import { updateClaimStatus } from "@/lib/bounties/claim-status";
 import { publishEvent } from "@/lib/realtime/publisher";
 import { recordActivity } from "@/lib/realtime/activity";
+
+const BodySchema = z
+  .object({
+    walletAddress: z.string().min(32).max(48).optional(),
+  })
+  .optional();
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +53,7 @@ export const runtime = "nodejs";
 const PLATFORM_FEE_BPS = 500;
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
@@ -55,6 +63,23 @@ export async function POST(
       { ok: false, error: "Not authenticated" },
       { status: 401 },
     );
+  }
+
+  // Hunter can pass the wallet they want the reward to land in. We
+  // prefer this over the saved `user.walletAddress` so a single
+  // account can pay out into different wallets across claims (and
+  // multiple accounts can share one wallet without DB UNIQUE
+  // collisions). Falls back to the saved address for legacy callers
+  // that don't include the body.
+  let bodyWallet: string | null = null;
+  try {
+    const raw = await req.json().catch(() => null);
+    const parsed = BodySchema.safeParse(raw);
+    if (parsed.success && parsed.data?.walletAddress) {
+      bodyWallet = parsed.data.walletAddress;
+    }
+  } catch {
+    /* no body / not JSON — fall through to saved wallet */
   }
 
   const db = getDb();
@@ -153,12 +178,13 @@ export async function POST(
     );
   }
 
-  /* ---- Recipient pre-flight ---------------------------------------- */
-  // The hunter must have connected a wallet before claiming — the
-  // server has nowhere to send the reward otherwise. The client side
-  // surfaces a "connect wallet" prompt; here we just return a clean
-  // error.
-  if (!user.walletAddress) {
+  /* ---- Recipient resolution ---------------------------------------- */
+  // Prefer the wallet the hunter sent in the request body (the live
+  // wallet-adapter address). Fall back to whatever's saved on the
+  // user row. Reward sends to wherever the hunter is connected RIGHT
+  // NOW — no need to keep the user → wallet binding sticky.
+  const recipientWallet = bodyWallet ?? user.walletAddress;
+  if (!recipientWallet || !isValidSolanaWallet(recipientWallet)) {
     // Roll the claim back so the hunter can retry once they connect.
     await db
       .update(claims)
@@ -179,11 +205,13 @@ export async function POST(
   }
 
   /* ---- Send the reward --------------------------------------------- */
-  // sendReward validates recipient (on-curve + registered user),
-  // pre-flights treasury balance, then retries up to 3x with backoff.
-  // We pass the bounty's decimals so SPL amounts scale correctly.
+  // sendReward validates recipient (on-curve), pre-flights treasury
+  // balance, then retries up to 3x with backoff. We pass the bounty's
+  // decimals so SPL amounts scale correctly. recipientPreverified
+  // skips the registered-user lookup — the hunter is already
+  // authenticated, no extra DB check needed.
   const tx = await sendReward({
-    toWalletAddress: user.walletAddress,
+    toWalletAddress: recipientWallet,
     tokenMint: claim.rewardTokenMint,
     tokenSymbol: claim.rewardTokenSymbol,
     amount: Number(claim.rewardAmount),
@@ -191,6 +219,7 @@ export async function POST(
     reference: `claim:${claim.id}`,
     claimId: claim.id,
     bountyId: claim.bountyId,
+    recipientPreverified: true,
   });
 
   if (!tx.ok) {
