@@ -837,9 +837,8 @@ function extractSimulationDetail(err: unknown): string | null {
     .join(" ");
   if (/no record of a prior credit|account not found/i.test(allText)) {
     return (
-      "Your wallet has no SOL on this cluster — fund it with devnet SOL " +
-      "(`solana airdrop 2 <wallet> --url devnet` or faucet.solana.com), " +
-      "then retry."
+      "Your wallet has no SOL — add some via an exchange (or any on-ramp) " +
+      "and retry. We need a small amount to pay the on-chain fee."
     );
   }
   if (/insufficient funds|insufficient lamports/i.test(allText)) {

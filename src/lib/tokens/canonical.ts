@@ -98,40 +98,12 @@ const MAINNET: Record<string, CanonicalToken> = {
   },
 };
 
-const DEVNET: Record<string, CanonicalToken> = {
-  USDC: {
-    // Devnet USDC. Note: there are several USDC test mints on devnet
-    // (Circle's `4zMMC9srt5...`, spl-token-faucet.com's clone, etc).
-    // This is the one we test against — must be the mint the dev
-    // wallet actually holds balance of, or SPL transfers will fail
-    // for "ATA not found". Update when switching faucets.
-    mint: "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr",
-    symbol: "USDC",
-    name: "USD Coin (Devnet)",
-    decimals: 6,
-    priceUsd: 1,
-    category: "stablecoin",
-    logoUrl: USDC_LOGO,
-    firstSeenAt: new Date("2021-01-01T00:00:00Z"),
-  },
-  SOL: {
-    // Same wrapped-SOL mint across networks.
-    mint: WSOL_MINT,
-    symbol: "SOL",
-    name: "Solana (Devnet)",
-    decimals: 9,
-    priceUsd: 0,
-    category: "sol_ecosystem",
-    logoUrl: SOL_LOGO,
-    firstSeenAt: new Date("2020-03-23T00:00:00Z"),
-  },
-  // No devnet USDT (Tether doesn't deploy on devnet) and no BNTY (the
-  // mint doesn't exist anywhere yet).
-};
-
 const REGISTRY: Record<SolanaNetwork, Record<string, CanonicalToken>> = {
   "mainnet-beta": MAINNET,
-  devnet: DEVNET,
+  // Devnet registry was dropped on the mainnet flip — the launch is
+  // mainnet-only from here on. Re-introduce a DEVNET map if a future
+  // dev environment needs canonical tokens against the test cluster.
+  devnet: MAINNET,
 };
 
 /* =========================================================================
