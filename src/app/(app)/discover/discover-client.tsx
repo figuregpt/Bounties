@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import {
   ArrowUpRight,
   Clock,
@@ -146,6 +147,9 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* ─── Platform row ──────────────────────────────────────────── */}
+      <PlatformRow />
+
       {/* ─── Header ────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -348,5 +352,106 @@ function SkeletonGrid() {
         <BountyCardSkeleton key={i} />
       ))}
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Platform row — X live, Instagram + TikTok pending
+   ───────────────────────────────────────────────────────────────────────── */
+
+function PlatformRow() {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <PlatformChip name="X" active icon={<XLogo />} />
+      <PlatformChip name="Instagram" icon={<InstagramLogo />} />
+      <PlatformChip name="TikTok" icon={<TikTokLogo />} />
+    </div>
+  );
+}
+
+function PlatformChip({
+  name,
+  active,
+  icon,
+}: {
+  name: string;
+  active?: boolean;
+  icon: React.ReactNode;
+}) {
+  return (
+    <span
+      aria-disabled={!active}
+      className={cn(
+        "inline-flex h-10 items-center gap-2 rounded-[var(--radius-pill)] px-3.5 text-small font-medium transition-colors",
+        active
+          ? "bg-accent-soft text-accent-text"
+          : "border border-border-default bg-bg-elevated text-text-tertiary",
+      )}
+    >
+      <span
+        className={cn(
+          "grid size-5 place-items-center",
+          active ? "text-accent-text" : "text-text-tertiary",
+        )}
+      >
+        {icon}
+      </span>
+      <span>{name}</span>
+      {!active && (
+        <span className="ml-1 rounded-[var(--radius-pill)] bg-bg-base px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+          Soon
+        </span>
+      )}
+    </span>
+  );
+}
+
+function XLogo() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden
+      className="size-4"
+      fill="currentColor"
+    >
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231ZM17.083 19.77h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
+
+function InstagramLogo() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="size-4" fill="none">
+      <rect
+        x="3"
+        y="3"
+        width="18"
+        height="18"
+        rx="5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TikTokLogo() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden
+      className="size-4"
+      fill="currentColor"
+    >
+      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.29 0 .57.04.83.12V9.41a6.34 6.34 0 0 0-1-.05A6.33 6.33 0 0 0 5.27 20.5a6.34 6.34 0 0 0 10.86-4.43V8.95a8.16 8.16 0 0 0 4.77 1.52V7.04a4.85 4.85 0 0 1-1.31-.35Z" />
+    </svg>
   );
 }
