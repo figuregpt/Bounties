@@ -231,6 +231,19 @@ export async function POST(
     recipientPreverified: true,
   });
 
+  if (tx.ok) {
+    // Persist the tx hash IMMEDIATELY so a crash between here and the
+    // final status flip can be recovered by `cron/recover-stuck-claims`
+    // (which uses the hash to check on-chain before deciding whether
+    // the claim was paid). Without this, the claim stays in 'claiming'
+    // with claim_tx_hash=null and recovery falls back to the audit_log
+    // — but persisting here is the cheaper, more direct guarantee.
+    await db
+      .update(claims)
+      .set({ claimTxHash: tx.signature, updatedAt: new Date() })
+      .where(eq(claims.id, claim.id));
+  }
+
   if (!tx.ok) {
     // Roll back to `verified` so the hunter can retry. Stash error +
     // clear claimAttemptedAt — the row is no longer in-flight.

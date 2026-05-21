@@ -1,8 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Connection } from "@solana/web3.js";
-import { and, eq, isNotNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { bounties, claims, platformRevenue, users } from "@/lib/db/schema";
+import {
+  auditLog,
+  bounties,
+  claims,
+  platformRevenue,
+  users,
+} from "@/lib/db/schema";
 import { verifyCronRequest } from "@/lib/cron/auth";
 import { rpcEndpoint } from "@/lib/solana/escrow";
 import { isMockSignature } from "@/lib/solana/treasury";
@@ -67,16 +73,50 @@ export async function POST(req: NextRequest) {
 
   for (const claim of stuck) {
     try {
-      if (claim.claimTxHash) {
+      // Defense-in-depth: if the route handler crashed AFTER sendReward
+      // resolved on-chain but BEFORE writing claim_tx_hash, the DB row
+      // still has claim_tx_hash=null. sendReward writes an audit_log
+      // entry with the signature right after submission, so we can
+      // recover the hash from there and avoid releasing a row that's
+      // already paid out (which would let the hunter double-claim).
+      let txHash: string | null = claim.claimTxHash;
+      if (!txHash) {
+        const [audit] = await db
+          .select({ afterState: auditLog.afterState })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.entityType, "claim"),
+              eq(auditLog.entityId, claim.id),
+              eq(auditLog.action, "reward_sent"),
+            ),
+          )
+          .orderBy(desc(auditLog.createdAt))
+          .limit(1);
+        const auditedTx = (audit?.afterState as { txHash?: unknown } | null)
+          ?.txHash;
+        if (typeof auditedTx === "string" && auditedTx.length > 0) {
+          txHash = auditedTx;
+          // Persist it back to the claim so future runs don't repeat
+          // the audit-log lookup.
+          await db
+            .update(claims)
+            .set({ claimTxHash: auditedTx, updatedAt: new Date() })
+            .where(eq(claims.id, claim.id))
+            .catch(() => {});
+        }
+      }
+
+      if (txHash) {
         // Mock signatures always "succeed" by definition (we never
         // actually hit the RPC for them). The fact that the row got
         // stuck in `claiming` means our code crashed between sendReward
         // and the success UPDATE — recover by promoting.
-        let onChainOk = isMockSignature(claim.claimTxHash);
+        let onChainOk = isMockSignature(txHash);
         let confirmedAt: Date | null = null;
         if (!onChainOk) {
           const tx = await connection
-            .getParsedTransaction(claim.claimTxHash, {
+            .getParsedTransaction(txHash, {
               commitment: "confirmed",
               maxSupportedTransactionVersion: 0,
             })
@@ -112,7 +152,7 @@ export async function POST(req: NextRequest) {
             publishEvent(`bounty-${claim.bountyId}`, "bounty_updated", {
               bountyId: claim.bountyId,
             });
-            recovered.push({ id: claim.id, sig: claim.claimTxHash });
+            recovered.push({ id: claim.id, sig: txHash });
           }
           continue;
         }
@@ -124,7 +164,7 @@ export async function POST(req: NextRequest) {
         .set({
           status: "verified",
           claimAttemptedAt: null,
-          claimTxError: claim.claimTxHash
+          claimTxError: txHash
             ? "Stuck in claiming; on-chain tx not found"
             : "Stuck in claiming; no tx hash recorded",
           updatedAt: new Date(),
@@ -134,7 +174,7 @@ export async function POST(req: NextRequest) {
       if (released_row.length > 0) {
         released.push({
           id: claim.id,
-          reason: claim.claimTxHash ? "tx_not_found" : "no_tx_hash",
+          reason: txHash ? "tx_not_found" : "no_tx_hash",
         });
       }
     } catch (err) {
