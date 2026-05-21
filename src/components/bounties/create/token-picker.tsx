@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ExternalLink,
@@ -192,22 +192,42 @@ export function TokenPicker({ selected, onChange }: Props) {
             Quick picks
           </p>
           <div className="flex flex-wrap gap-2">
-            {picks.map((p) => (
-              <button
-                key={p.mint}
-                type="button"
-                onClick={() => void enrich(p.mint)}
-                disabled={loading}
-                className="press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60"
-              >
-                <TokenAvatar
-                  logoUrl={p.logoUrl}
-                  symbol={p.symbol}
-                  size={18}
-                />
-                <span className="font-medium">{p.symbol}</span>
-              </button>
-            ))}
+            {picks.map((p) => {
+              // BNTY is the platform token; mint isn't live yet so the
+              // chip is informational only — surface it disabled with a
+              // 'Soon' badge instead of routing into enrichment.
+              const isComingSoon = p.symbol.toUpperCase() === "BNTY";
+              return (
+                <button
+                  key={p.mint}
+                  type="button"
+                  onClick={() => {
+                    if (isComingSoon) return;
+                    void enrich(p.mint);
+                  }}
+                  disabled={loading || isComingSoon}
+                  aria-disabled={isComingSoon}
+                  className={cn(
+                    "press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors disabled:cursor-not-allowed",
+                    isComingSoon
+                      ? "opacity-60"
+                      : "hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60",
+                  )}
+                >
+                  <TokenAvatar
+                    logoUrl={p.logoUrl}
+                    symbol={p.symbol}
+                    size={18}
+                  />
+                  <span className="font-medium">{p.symbol}</span>
+                  {isComingSoon && (
+                    <span className="rounded-[var(--radius-pill)] bg-bg-base px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">
+                      Soon
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -227,41 +247,11 @@ function TokenInfoCard({
   onClear: () => void;
 }) {
   const up = token.priceChange24hPercent >= 0;
-  const w = token.warnings;
-  const warnings = useMemo(() => {
-    const out: { kind: "amber" | "blue"; text: string }[] = [];
-    // Admin-verified tokens (USDC, SOL, BNTY) skip every soft warning —
-    // they're blue-chips and the warnings would just add noise.
-    if (token.isAdminVerified) return out;
-    if (w?.lowLiquidity) {
-      out.push({
-        kind: "amber",
-        text: "Low liquidity — hunters may struggle to swap this token.",
-      });
-    }
-    if (w?.lowVolume) {
-      out.push({
-        kind: "amber",
-        text: "Very low 24h trading volume.",
-      });
-    }
-    if (w?.newToken) {
-      out.push({
-        kind: "amber",
-        text: "Newly listed token — consider waiting for more data.",
-      });
-    }
-    // Genuinely-obscure signal: not vetted by us AND no prior use on
-    // the platform. Either condition alone is too weak (every fresh
-    // mint trips it; verified tokens with zero usage shouldn't trip it).
-    if (w?.firstSeen) {
-      out.push({
-        kind: "blue",
-        text: "First bounty with this token on bounties.fm.",
-      });
-    }
-    return out;
-  }, [w, token.isAdminVerified]);
+  // Soft-warning banners (low-liquidity / new-token / first-bounty)
+  // were removed — they added noise on the create flow without
+  // changing whether the launch could go through. The CTA disclaimer
+  // below the card still tells creators to check DexScreener.
+  const warnings: { kind: "amber" | "blue"; text: string }[] = [];
 
   return (
     <div className="space-y-3 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4">

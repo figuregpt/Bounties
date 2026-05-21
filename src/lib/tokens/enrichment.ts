@@ -141,6 +141,17 @@ export async function enrichToken(
   // `getCanonicalByMint` resolves against the current network only.
   const canonical = getCanonicalByMint(mint);
   if (canonical) {
+    // Stablecoins hardcode priceUsd=1 in the registry. SOL/BNTY have
+    // priceUsd=0 because their real price comes from a market. SOL we
+    // can fetch from CoinGecko (DexScreener returns garbage for WSOL
+    // because it's the quote side of most pairs); BNTY has no market
+    // yet so it stays 0 until the token launches.
+    const fetched =
+      canonical.priceUsd > 0
+        ? canonical.priceUsd
+        : canonical.symbol === "SOL"
+          ? await fetchSolPriceUsd()
+          : 0;
     const now = new Date();
     const upserted = await db
       .insert(tokens)
@@ -151,7 +162,7 @@ export async function enrichToken(
         decimals: canonical.decimals,
         logoUrl: canonical.logoUrl,
         category: canonical.category,
-        jupiterPriceUsd: canonical.priceUsd.toString(),
+        jupiterPriceUsd: fetched.toString(),
         jupiterPriceUpdatedAt: now,
         priceChange24hPercent: "0",
         firstSeenAt: canonical.firstSeenAt,
@@ -165,7 +176,7 @@ export async function enrichToken(
           decimals: canonical.decimals,
           logoUrl: canonical.logoUrl,
           category: canonical.category,
-          jupiterPriceUsd: canonical.priceUsd.toString(),
+          jupiterPriceUsd: fetched.toString(),
           jupiterPriceUpdatedAt: now,
           priceChange24hPercent: "0",
           isAdminVerified: true,
@@ -249,6 +260,31 @@ export async function enrichToken(
  * chain for decimals and upsert a minimal row — placeholder symbol
  * (truncated mint), $0 price, no logo. Sufficient for test launches.
  */
+/**
+ * SOL price fetcher — DexScreener returns useless numbers for the WSOL
+ * mint (it shows up as the quote-side of most pairs), so for the SOL
+ * canonical we hit CoinGecko's free price endpoint. Best-effort: a
+ * fetch failure returns 0, the caller treats it the same as an
+ * un-priced token and the UI shows $0.
+ */
+async function fetchSolPriceUsd(): Promise<number> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5_000);
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      { signal: ctrl.signal },
+    );
+    clearTimeout(t);
+    if (!res.ok) return 0;
+    const body = (await res.json()) as { solana?: { usd?: number } };
+    const usd = Number(body.solana?.usd ?? 0);
+    return Number.isFinite(usd) && usd > 0 ? usd : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function enrichDevnetFallback(
   mint: string,
   existing: typeof tokens.$inferSelect | undefined,
