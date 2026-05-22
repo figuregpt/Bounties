@@ -278,7 +278,9 @@ function stateFromClaim(claim: Claim, _bounty: Bounty): BountyUIState | null {
       return {
         kind: "awaiting_initial",
         title: "Verifying your actions",
-        message: "This usually takes a few seconds.",
+        message:
+          "This usually takes a few seconds. If your task checks out, " +
+          "your reward will be ready to claim when the bounty ends.",
         canHunt: false,
         canClaim: false,
         canCancel: false,
