@@ -33,12 +33,13 @@ export async function GET(_req: NextRequest) {
   }
   const db = getDb();
 
-  const defaultMints = Object.values(getCanonicalTokens()).map((t) => t.mint);
+  const canonicalTokens = Object.values(getCanonicalTokens());
+  const defaultMints = canonicalTokens.map((t) => t.mint);
 
   // Strict gating: only surface tokens with a logo. Logoless rows can
   // exist from earlier enrichment passes that didn't gate; quick-picks
   // is a friendly UI affordance and we don't want broken cards there.
-  const defaults = await db
+  const defaultsFromDb = await db
     .select()
     .from(tokens)
     .where(
@@ -49,7 +50,38 @@ export async function GET(_req: NextRequest) {
       ),
     );
 
-  const popular = await db
+  // Fresh DB (or first-launch) → tokens table doesn't have the
+  // canonical rows yet because nobody's enriched USDC/SOL/BNTY yet.
+  // Fall back to the static registry so the chips still render; the
+  // first click on a chip triggers enrichToken which persists the
+  // canonical row with live price/decimals.
+  const seenMints = new Set(defaultsFromDb.map((d) => d.mint));
+  const dbShape = defaultsFromDb.map((row) => ({
+    mint: row.mint,
+    symbol: row.symbol,
+    name: row.name,
+    decimals: row.decimals,
+    logoUrl: row.logoUrl,
+    category: row.category,
+    priceUsd:
+      row.jupiterPriceUsd != null ? Number(row.jupiterPriceUsd) : null,
+    usageCount: row.usageCount,
+  }));
+  const fallbackShape = canonicalTokens
+    .filter((t) => !seenMints.has(t.mint))
+    .map((t) => ({
+      mint: t.mint,
+      symbol: t.symbol,
+      name: t.name,
+      decimals: t.decimals,
+      logoUrl: t.logoUrl,
+      category: t.category,
+      priceUsd: t.priceUsd > 0 ? t.priceUsd : null,
+      usageCount: 0,
+    }));
+  const defaults = [...dbShape, ...fallbackShape];
+
+  const popularRows = await db
     .select()
     .from(tokens)
     .where(
@@ -62,7 +94,19 @@ export async function GET(_req: NextRequest) {
     .orderBy(desc(tokens.usageCount))
     .limit(MAX);
 
-  const merged: Array<typeof tokens.$inferSelect> = [];
+  const popular = popularRows.map((row) => ({
+    mint: row.mint,
+    symbol: row.symbol,
+    name: row.name,
+    decimals: row.decimals,
+    logoUrl: row.logoUrl,
+    category: row.category,
+    priceUsd:
+      row.jupiterPriceUsd != null ? Number(row.jupiterPriceUsd) : null,
+    usageCount: row.usageCount,
+  }));
+
+  const merged: Array<(typeof defaults)[number]> = [];
   const seen = new Set<string>();
   for (const list of [defaults, popular]) {
     for (const row of list) {
@@ -74,18 +118,5 @@ export async function GET(_req: NextRequest) {
     if (merged.length >= MAX) break;
   }
 
-  return NextResponse.json({
-    ok: true,
-    tokens: merged.map((t) => ({
-      mint: t.mint,
-      symbol: t.symbol,
-      name: t.name,
-      decimals: t.decimals,
-      logoUrl: t.logoUrl,
-      category: t.category,
-      priceUsd:
-        t.jupiterPriceUsd != null ? Number(t.jupiterPriceUsd) : null,
-      usageCount: t.usageCount,
-    })),
-  });
+  return NextResponse.json({ ok: true, tokens: merged });
 }
