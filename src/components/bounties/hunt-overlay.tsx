@@ -58,6 +58,10 @@ type Props = {
     | "rewardTokenSymbol"
   >;
   hunt: HuntApi;
+  /** Currently-connected wallet (from useWalletConnection upstream).
+   *  Forwarded to `start()` so the slot-reservation API can run the
+   *  holder-requirement balance check if the bounty needs one. */
+  connectedWallet?: string | null;
 };
 
 export function HuntOverlay({
@@ -65,6 +69,7 @@ export function HuntOverlay({
   onOpenChange,
   bounty,
   hunt,
+  connectedWallet,
 }: Props) {
   const {
     phase,
@@ -85,9 +90,9 @@ export function HuntOverlay({
   useEffect(() => {
     if (!open) return;
     if (!claim && !busy && phase === "idle") {
-      void start();
+      void start(connectedWallet);
     }
-  }, [open, claim, busy, phase, start]);
+  }, [open, claim, busy, phase, start, connectedWallet]);
 
   // Re-arm error/verification surfaces when closing.
   useEffect(() => {

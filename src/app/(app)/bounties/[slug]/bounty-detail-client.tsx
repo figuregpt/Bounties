@@ -328,6 +328,7 @@ export function BountyDetailClient({
         }}
         bounty={bounty}
         hunt={hunt}
+        connectedWallet={connectedWallet}
       />
     </motion.div>
   );

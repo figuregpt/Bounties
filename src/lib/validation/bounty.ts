@@ -204,6 +204,21 @@ const EligibilityFiltersSchema = z.object({
     .enum(REPUTATION_TIERS, { message: "Pick a reputation tier" })
     .nullable(),
   smartFollowers: SmartFollowersSchema.nullable().default(null),
+  holderRequirement: z
+    .object({
+      mint: z
+        .string()
+        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, {
+          message: "Looks like an invalid Solana mint",
+        }),
+      minAmount: z
+        .number()
+        .positive({ message: "Minimum balance must be positive" }),
+      symbol: z.string().min(1).max(20),
+      decimals: z.number().int().min(0).max(18),
+    })
+    .nullable()
+    .default(null),
 });
 
 /* =========================================================================
@@ -357,6 +372,7 @@ export function defaultCreateBountyValues(
       minPreviousBounties: null,
       requireReputationTier: null,
       smartFollowers: { minimum: 0 },
+      holderRequirement: null,
     },
     distributionModel: "fixed_slot",
     durationHours: 24,

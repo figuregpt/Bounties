@@ -117,7 +117,7 @@ export function useHunt({ bountyId, userId, initialClaim }: UseHuntArgs) {
     ),
   );
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (walletAddress?: string | null) => {
     setBusy(true);
     setError(null);
     setVerification(null);
@@ -125,7 +125,13 @@ export function useHunt({ bountyId, userId, initialClaim }: UseHuntArgs) {
       const res = await fetch("/api/claims", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bountyId }),
+        body: JSON.stringify({
+          bountyId,
+          // Server side balance check needs this when the bounty has
+          // a holder requirement — passing null/undefined for other
+          // bounties is a no-op.
+          ...(walletAddress ? { walletAddress } : {}),
+        }),
       });
       const body = (await res.json()) as {
         ok: boolean;

@@ -26,6 +26,10 @@ export const revalidate = 0;
 
 const BodySchema = z.object({
   bountyId: z.string().uuid(),
+  /** Hunter's currently-connected wallet — required when the bounty
+   *  has a holder requirement so we can run a balance check before
+   *  reserving the slot. */
+  walletAddress: z.string().min(32).max(48).optional(),
 });
 
 /**
@@ -175,6 +179,61 @@ export async function POST(req: NextRequest) {
       { ok: false, error: "Not eligible", eligibility },
       { status: 403 },
     );
+  }
+
+  // Holder requirement: bounty-creator-defined SPL balance gate.
+  // Checked here (at slot reservation) because it depends on the
+  // hunter's connected wallet, which `checkEligibility` doesn't see.
+  // On-chain RPC roundtrip — kept narrow (single account read).
+  const holderReq = bounty.eligibilityFilters?.holderRequirement;
+  if (holderReq && holderReq.minAmount > 0) {
+    if (!parsed.data.walletAddress) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `This bounty requires holding ${holderReq.minAmount} ${holderReq.symbol}+ — connect a wallet first.`,
+          errorCode: "wallet_required",
+          holderRequirement: holderReq,
+        },
+        { status: 403 },
+      );
+    }
+    const { hasMinTokenBalance } = await import(
+      "@/lib/solana/token-balance"
+    );
+    let ok = false;
+    try {
+      ok = await hasMinTokenBalance({
+        wallet: parsed.data.walletAddress,
+        mint: holderReq.mint,
+        minAmount: holderReq.minAmount,
+        decimals: holderReq.decimals,
+      });
+    } catch (err) {
+      console.error(
+        "[claims] holder balance check failed:",
+        err instanceof Error ? err.message : err,
+      );
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Couldn't verify wallet balance — try again.",
+          errorCode: "balance_check_failed",
+        },
+        { status: 502 },
+      );
+    }
+    if (!ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Your wallet doesn't hold ${holderReq.minAmount} ${holderReq.symbol}+. Top up and try again.`,
+          errorCode: "holder_min_not_met",
+          holderRequirement: holderReq,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // 3) Create the claim row WITHOUT touching the bounty counters. The

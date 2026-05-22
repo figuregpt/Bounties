@@ -103,6 +103,16 @@ export type EligibilityFilters = {
   /** Phase 6+: persisted on the bounty row, evaluated at claim time
    *  (Phase 7) once the smart-account follower cache lands. */
   smartFollowers?: SmartFollowersConfig | null;
+  /** Token-holder gate. When set, POST /api/claims checks the SPL
+   *  balance of the hunter's connected wallet for `mint` and rejects
+   *  if it's below `minAmount` (whole-token units, not raw). Symbol
+   *  is cached for the bounty card / detail badge. */
+  holderRequirement?: {
+    mint: string;
+    minAmount: number;
+    symbol: string;
+    decimals: number;
+  } | null;
 };
 
 export type DistributionConfig = {
