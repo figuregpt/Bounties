@@ -24,6 +24,7 @@ import {
   type TokenOption,
 } from "@/components/bounties/create/reward-section";
 import { EligibilityFiltersBuilder } from "@/components/bounties/create/eligibility-filters-builder";
+import { HolderRequirementSection } from "@/components/bounties/create/holder-requirement-section";
 import { DistributionPicker } from "@/components/bounties/create/distribution-picker";
 import { DurationPicker } from "@/components/bounties/create/duration-picker";
 import { LivePreviewCard } from "@/components/bounties/create/live-preview-card";
@@ -544,6 +545,26 @@ export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props)
           <FormSection
             step={7}
             sectionId="bounty-section-7"
+            title="Holder requirement"
+            helper="Optional — only allow hunters who hold a minimum balance of a specific token."
+            complete
+          >
+            <HolderRequirementSection
+              value={form.eligibilityFilters.holderRequirement ?? null}
+              onChange={(next) =>
+                patch({
+                  eligibilityFilters: {
+                    ...form.eligibilityFilters,
+                    holderRequirement: next,
+                  },
+                })
+              }
+            />
+          </FormSection>
+
+          <FormSection
+            step={8}
+            sectionId="bounty-section-8"
             title="Campaign duration"
             helper="How long this bounty stays open."
             complete={!!form.durationHours}

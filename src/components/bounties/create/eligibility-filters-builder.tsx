@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -156,11 +156,6 @@ export function EligibilityFiltersBuilder({
         onChange={(next) => set("smartFollowers", next)}
       />
 
-      <HolderRequirementBlock
-        value={value.holderRequirement ?? null}
-        onChange={(next) => set("holderRequirement", next)}
-      />
-
       <div className="flex items-center gap-3 rounded-[10px] bg-bg-elevated px-4 py-3">
         <Users className="size-4 text-accent-text" strokeWidth={2} />
         <p className="text-small text-text-primary">{estimate.copy}</p>
@@ -229,127 +224,3 @@ function SmartFollowersBlock({
   );
 }
 
-/* =========================================================================
-   Holder requirement — token-balance gate for hunters
-   ========================================================================= */
-
-type HolderRequirement = NonNullable<EligibilityFilters["holderRequirement"]>;
-
-function HolderRequirementBlock({
-  value,
-  onChange,
-}: {
-  value: HolderRequirement | null;
-  onChange: (next: HolderRequirement | null) => void;
-}) {
-  const [mintInput, setMintInput] = useState(value?.mint ?? "");
-  const [lookupErr, setLookupErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // When the user pastes a mint, enrich it (just like the reward
-  // token picker does) so we capture symbol + decimals on the way in.
-  // Persists right away as { mint, symbol, decimals, minAmount }.
-  async function lookup(rawMint: string): Promise<void> {
-    const mint = rawMint.trim();
-    if (!mint) return;
-    setLoading(true);
-    setLookupErr(null);
-    try {
-      const res = await fetch("/api/tokens/enrich", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mintAddress: mint }),
-      });
-      const body = (await res.json()) as {
-        ok: boolean;
-        error?: string;
-        token?: { mint: string; symbol: string; decimals: number };
-      };
-      if (!res.ok || !body.ok || !body.token) {
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      onChange({
-        mint: body.token.mint,
-        symbol: body.token.symbol,
-        decimals: body.token.decimals,
-        minAmount: value?.minAmount ?? 1,
-      });
-    } catch (err) {
-      setLookupErr(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="rounded-[10px] border border-border-subtle bg-bg-base p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-small text-text-primary">Holder requirement</p>
-          <p className="text-caption text-text-tertiary">
-            {value
-              ? `Hunters must hold ${value.minAmount} ${value.symbol}+ when they click Hunt now.`
-              : "Optional — gate the bounty on a token balance check."}
-          </p>
-        </div>
-        {value && (
-          <button
-            type="button"
-            onClick={() => {
-              setMintInput("");
-              setLookupErr(null);
-              onChange(null);
-            }}
-            className="press text-caption text-text-tertiary hover:text-text-primary"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_140px]">
-        <Input
-          type="text"
-          placeholder="Token contract address (mint)"
-          value={mintInput}
-          onChange={(e) => setMintInput(e.target.value)}
-          onBlur={() => {
-            if (mintInput && mintInput !== value?.mint) {
-              void lookup(mintInput);
-            }
-          }}
-        />
-        <Input
-          type="number"
-          min={0}
-          step="any"
-          placeholder="Min amount"
-          disabled={!value}
-          value={value?.minAmount ?? ""}
-          onChange={(e) => {
-            if (!value) return;
-            const n = Number(e.target.value);
-            if (Number.isFinite(n) && n > 0) {
-              onChange({ ...value, minAmount: n });
-            }
-          }}
-          className="tabular-nums"
-        />
-      </div>
-
-      {loading && (
-        <p className="mt-2 text-caption text-text-tertiary">
-          Looking up token…
-        </p>
-      )}
-      {lookupErr && (
-        <p className="mt-2 text-caption text-danger">{lookupErr}</p>
-      )}
-      {value && !loading && (
-        <p className="mt-2 text-caption text-text-tertiary">
-          Token resolved: {value.symbol} · {value.decimals} decimals
-        </p>
-      )}
-    </div>
-  );
-}
