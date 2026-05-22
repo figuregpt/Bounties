@@ -31,6 +31,10 @@ type Props = {
   rewardPerHunter: number;
   maxHunters: number;
   mode: RewardMode;
+  /** True for `pool_lottery` distribution: switches the UI to ask
+   *  for "Total prize pool" and "Number of winners" directly, since
+   *  per-hunter × slots framing confuses the lottery flow. */
+  isLottery?: boolean;
   onTokenChange: (next: TokenOption | null) => void;
   onPerHunterChange: (next: number) => void;
   onMaxHuntersChange: (next: number) => void;
@@ -42,6 +46,7 @@ export function RewardSection({
   rewardPerHunter,
   maxHunters,
   mode,
+  isLottery = false,
   onTokenChange,
   onPerHunterChange,
   onMaxHuntersChange,
@@ -73,63 +78,92 @@ export function RewardSection({
         <TokenPicker selected={token} onChange={onTokenChange} />
       </div>
 
-      {/* Mode tabs ----------------------------------------------------- */}
-      <div className="inline-flex rounded-[10px] border border-border-default bg-bg-elevated p-0.5">
-        {(["per_hunter", "total_pool"] as RewardMode[]).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onModeChange(m)}
-            className={cn(
-              "press rounded-[8px] px-3 py-1 text-caption transition-colors",
-              mode === m
-                ? "bg-bg-surface text-text-primary"
-                : "text-text-secondary",
-            )}
-          >
-            {m === "per_hunter" ? "Per hunter" : "Total pool"}
-          </button>
-        ))}
-      </div>
+      {/* Mode tabs (fixed_slot only — lottery has its own simplified UI) */}
+      {!isLottery && (
+        <div className="inline-flex rounded-[10px] border border-border-default bg-bg-elevated p-0.5">
+          {(["per_hunter", "total_pool"] as RewardMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onModeChange(m)}
+              className={cn(
+                "press rounded-[8px] px-3 py-1 text-caption transition-colors",
+                mode === m
+                  ? "bg-bg-surface text-text-primary"
+                  : "text-text-secondary",
+              )}
+            >
+              {m === "per_hunter" ? "Per hunter" : "Total pool"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Amount calculator -------------------------------------------- */}
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
-        <NumberCell
-          label={mode === "per_hunter" ? "Per hunter" : "Total pool"}
-          value={
-            mode === "per_hunter" ? rewardPerHunter : total
-          }
-          suffix={symbol}
-          onChange={(v) => {
-            if (mode === "per_hunter") {
-              onPerHunterChange(v);
-            } else if (maxHunters > 0) {
-              onPerHunterChange(v / maxHunters);
+      {isLottery ? (
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
+          <NumberCell
+            label="Total prize pool"
+            value={total}
+            suffix={symbol}
+            onChange={(v) => {
+              if (maxHunters > 0) onPerHunterChange(v / maxHunters);
+            }}
+          />
+          <Op>÷</Op>
+          <NumberCell
+            label="Winners"
+            value={maxHunters}
+            integer
+            onChange={(v) =>
+              onMaxHuntersChange(Math.max(1, Math.round(v)))
             }
-          }}
-        />
-        <Op>{mode === "per_hunter" ? "×" : "÷"}</Op>
-        <NumberCell
-          label="Slots"
-          value={maxHunters}
-          integer
-          onChange={(v) => onMaxHuntersChange(Math.max(1, Math.round(v)))}
-        />
-        <Op>=</Op>
-        <NumberCell
-          label={mode === "per_hunter" ? "Total pool" : "Per hunter"}
-          value={mode === "per_hunter" ? total : rewardPerHunter}
-          suffix={symbol}
-          readOnly
-        />
-      </div>
+          />
+          <Op>=</Op>
+          <NumberCell
+            label="Each winner gets"
+            value={rewardPerHunter}
+            suffix={symbol}
+            readOnly
+          />
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
+          <NumberCell
+            label={mode === "per_hunter" ? "Per hunter" : "Total pool"}
+            value={mode === "per_hunter" ? rewardPerHunter : total}
+            suffix={symbol}
+            onChange={(v) => {
+              if (mode === "per_hunter") {
+                onPerHunterChange(v);
+              } else if (maxHunters > 0) {
+                onPerHunterChange(v / maxHunters);
+              }
+            }}
+          />
+          <Op>{mode === "per_hunter" ? "×" : "÷"}</Op>
+          <NumberCell
+            label="Slots"
+            value={maxHunters}
+            integer
+            onChange={(v) => onMaxHuntersChange(Math.max(1, Math.round(v)))}
+          />
+          <Op>=</Op>
+          <NumberCell
+            label={mode === "per_hunter" ? "Total pool" : "Per hunter"}
+            value={mode === "per_hunter" ? total : rewardPerHunter}
+            suffix={symbol}
+            readOnly
+          />
+        </div>
+      )}
 
       {/* USD breakdown + min-reward floor ----------------------------- */}
       <div className="space-y-2 rounded-[10px] border border-border-subtle bg-bg-base px-4 py-3 text-small">
         <div className="flex items-center justify-between">
           <span className="inline-flex items-center gap-2 text-text-secondary">
             <Coins className="size-3.5" strokeWidth={2} />
-            Per hunter
+            {isLottery ? "Each winner gets" : "Per hunter"}
           </span>
           <span
             className="font-mono tabular-nums text-text-primary"
@@ -151,20 +185,20 @@ export function RewardSection({
           <div className="flex flex-col gap-1.5">
             <FloorIndicator
               passes={perHunterPasses}
-              passLabel={`Per hunter ≈ ${formatTokenPrice(perHunterUsd)} (min $${MIN_REWARD_PER_HUNTER_USD})`}
-              failLabel={`Per hunter must be at least $${MIN_REWARD_PER_HUNTER_USD} — currently ≈ ${formatTokenPrice(perHunterUsd)}`}
+              passLabel={`${isLottery ? "Each winner" : "Per hunter"} ≈ ${formatTokenPrice(perHunterUsd)} (min $${MIN_REWARD_PER_HUNTER_USD})`}
+              failLabel={`${isLottery ? "Each winner" : "Per hunter"} must be at least $${MIN_REWARD_PER_HUNTER_USD} — currently ≈ ${formatTokenPrice(perHunterUsd)}`}
             />
             <FloorIndicator
               passes={totalPoolPasses}
               passLabel={`Total pool ≈ ${formatTokenPrice(totalUsd)} (min $${MIN_TOTAL_POOL_USD})`}
-              failLabel={`Total pool must be at least $${MIN_TOTAL_POOL_USD} — currently ≈ ${formatTokenPrice(totalUsd)}. Increase per-hunter amount or slots.`}
+              failLabel={`Total pool must be at least $${MIN_TOTAL_POOL_USD} — currently ≈ ${formatTokenPrice(totalUsd)}. ${isLottery ? "Raise the prize pool or lower winner count." : "Increase per-hunter amount or slots."}`}
             />
           </div>
         )}
         <p className="text-caption text-text-tertiary">
-          Bounties have two minimums: ${MIN_TOTAL_POOL_USD} total pool and
-          ${MIN_REWARD_PER_HUNTER_USD} per hunter. Platform fee · 5% comes from
-          each claim, not from the pool you escrow now.
+          {isLottery
+            ? `Lottery bounties have two minimums: $${MIN_TOTAL_POOL_USD} total prize pool and $${MIN_REWARD_PER_HUNTER_USD} per winner. Platform fee · 5% comes from each winning claim, not from the pool you escrow now.`
+            : `Bounties have two minimums: $${MIN_TOTAL_POOL_USD} total pool and $${MIN_REWARD_PER_HUNTER_USD} per hunter. Platform fee · 5% comes from each claim, not from the pool you escrow now.`}
         </p>
       </div>
     </div>

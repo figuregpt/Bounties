@@ -518,7 +518,11 @@ export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props)
             step={6}
             sectionId="bounty-section-6"
             title="Reward"
-            helper="Choose what hunters earn and how many slots."
+            helper={
+              form.distributionModel === "pool_lottery"
+                ? "Set the total prize pool and how many random winners."
+                : "Choose what hunters earn and how many slots."
+            }
             complete={
               form.rewardPerHunter > 0 && form.maxHunters > 0
             }
@@ -529,6 +533,7 @@ export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props)
               rewardPerHunter={form.rewardPerHunter}
               maxHunters={form.maxHunters}
               mode={rewardMode}
+              isLottery={form.distributionModel === "pool_lottery"}
               onTokenChange={onTokenChange}
               onPerHunterChange={onPerHunterChange}
               onMaxHuntersChange={(n) => patch({ maxHunters: n })}
