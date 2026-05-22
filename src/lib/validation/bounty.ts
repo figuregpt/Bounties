@@ -13,18 +13,7 @@ import { getCanonicalBySymbol } from "@/lib/tokens/canonical";
    Constants (re-exported for the UI to render the same options)
    ========================================================================= */
 
-/** Sentinel for the 5-minute test mode. Real value is 5/60 hours;
- *  declared as a named constant so client and server share the exact
- *  JS number representation for the `.includes` validation check. */
-export const FIVE_MINUTES_HOURS = 5 / 60;
-export const DURATION_HOURS_OPTIONS = [
-  FIVE_MINUTES_HOURS,
-  6,
-  12,
-  24,
-  48,
-  72,
-] as const;
+export const DURATION_HOURS_OPTIONS = [6, 12, 24, 48, 72] as const;
 export type DurationHours = (typeof DURATION_HOURS_OPTIONS)[number];
 
 /**

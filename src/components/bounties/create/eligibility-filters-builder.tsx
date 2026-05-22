@@ -198,53 +198,28 @@ function Row({
    ========================================================================= */
 
 function SmartFollowersBlock({
-  value,
-  active,
-  listSize,
-  onChange,
+  value: _value,
+  active: _active,
+  listSize: _listSize,
+  onChange: _onChange,
 }: {
   value: SmartFollowers;
   active: boolean;
   listSize: number;
   onChange: (next: SmartFollowers) => void;
 }) {
-  const status = active
-    ? `Hunters must be followed by ${value.minimum}+ accounts from our curated list`
-    : "No smart follower requirement";
-
   return (
-    <div className="rounded-[10px] border border-border-subtle bg-bg-base p-4">
-      <p className="text-small text-text-primary">Smart followers</p>
-      <p className="text-caption text-text-tertiary">{status}</p>
-      <p className="mt-1 text-caption text-text-quaternary">
-        Hunters followed by at least N accounts from our curated list of{" "}
-        <span className="text-text-tertiary">
-          {listSize.toLocaleString()}
-        </span>{" "}
-        influential accounts. Leave 0 for no requirement. Enforced at claim
-        time (Phase 7 verification).
-      </p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <label className="text-caption text-text-tertiary">
-          Minimum smart followers required
-        </label>
-        <Input
-          type="number"
-          min={0}
-          max={50}
-          value={value.minimum}
-          onChange={(e) =>
-            onChange({
-              minimum: Math.max(
-                0,
-                Math.min(50, Number(e.target.value) || 0),
-              ),
-            })
-          }
-          className="w-20 tabular-nums"
-        />
+    <div className="rounded-[10px] border border-border-subtle bg-bg-base p-4 opacity-60">
+      <div className="flex items-center gap-2">
+        <p className="text-small text-text-primary">Smart followers</p>
+        <span className="rounded-[var(--radius-pill)] bg-bg-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+          Soon
+        </span>
       </div>
+      <p className="mt-1 text-caption text-text-tertiary">
+        Gate bounties on hunters followed by N accounts from a curated
+        influencer list. Coming in a later phase.
+      </p>
     </div>
   );
 }

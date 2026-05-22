@@ -133,13 +133,7 @@ export function ConfirmLaunchModal({
       ),
     },
     { label: "Slots", value: maxHunters },
-    {
-      label: "Duration",
-      value:
-        durationHours < 1
-          ? `${Math.round(durationHours * 60)} minutes`
-          : `${durationHours} hours`,
-    },
+    { label: "Duration", value: `${durationHours} hours` },
     {
       label: "Bounty creation fee",
       value: (

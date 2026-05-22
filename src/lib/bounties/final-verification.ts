@@ -82,12 +82,84 @@ export async function runFinalVerification(
     }
   }
 
+  // Random-lottery payout selection. fixed_slot bounties pay every
+  // verified claim; pool_lottery picks `maxHunters` winners at random
+  // from the verified pool and demotes the rest to a terminal
+  // `failed` state with a dedicated category so the UI can show "you
+  // joined but weren't drawn" instead of "verification failed".
+  if (bounty.distributionModel === "pool_lottery") {
+    const losers = await drawLotteryLosers(bounty);
+    newlyFailed += losers;
+  }
+
   return {
     bountyId,
     totalProcessed: pending.length,
     newlyVerified,
     newlyFailed,
   };
+}
+
+async function drawLotteryLosers(bounty: Bounty): Promise<number> {
+  const db = getDb();
+  // Pull every `verified` claim for this bounty — those are eligible
+  // participants. Order is deterministic per-row but the picker uses
+  // crypto-random shuffling so two cron passes wouldn't pick the same
+  // set if a race somehow re-fired this. (Once a row is marked
+  // `failed` it's a terminal state and won't be re-eligible.)
+  const eligible = await db
+    .select({ id: claims.id })
+    .from(claims)
+    .where(
+      and(eq(claims.bountyId, bounty.id), eq(claims.status, "verified")),
+    );
+  if (eligible.length <= bounty.maxHunters) {
+    // Fewer (or exactly) participants than seats — everybody wins,
+    // no losers to draw.
+    return 0;
+  }
+  const shuffled = cryptoShuffle(eligible.map((r) => r.id));
+  const loserIds = shuffled.slice(bounty.maxHunters);
+
+  // Atomic demotion: only flip rows still in `verified`. If a hunter
+  // somehow grabbed `claiming` before this transition ran (shouldn't
+  // happen pre-completion, but defensive), they keep their win.
+  const updated = await db
+    .update(claims)
+    .set({
+      status: "failed",
+      failureCategory: "not_selected_lottery",
+      failureReason: "Bounty drew a random winner set; you weren't selected.",
+      failedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        inArray(claims.id, loserIds),
+        eq(claims.status, "verified"),
+      ),
+    )
+    .returning({ id: claims.id });
+
+  return updated.length;
+}
+
+/**
+ * Fisher–Yates shuffle using `crypto.getRandomValues` so the draw is
+ * unpredictable and uniform. We don't care about determinism — each
+ * cron pass that reaches this code shuffles fresh on a frozen
+ * participant list, and the atomic `eq(status, 'verified')` predicate
+ * keeps a re-run from re-shuffling already-decided rows.
+ */
+function cryptoShuffle<T>(input: readonly T[]): T[] {
+  const out = [...input];
+  const rand = new Uint32Array(out.length);
+  globalThis.crypto.getRandomValues(rand);
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = rand[i] % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 async function finalVerifyClaim(

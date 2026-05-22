@@ -504,7 +504,7 @@ export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props)
             step={5}
             sectionId="bounty-section-5"
             title="How rewards are distributed"
-            helper="Only Fixed slots ships in v1. Other models are queued."
+            helper="Fixed slots and Random lottery are live. Other models are queued."
             complete={!!form.distributionModel}
             errors={sectionErrors[5]}
           >

@@ -48,14 +48,21 @@ type Props = {
 export function BountyCard({ bounty, variant = "feed" }: Props) {
   const eligible = bounty.eligibility.eligible;
   const total = bounty.maxHunters;
+  const isLottery = bounty.distributionModel === "pool_lottery";
   // Phase 8.5+: `currentHuntersCount` is the computed verified+ count.
   // It already includes claimed/finalized claims, so use it directly
   // for the progress bar — DON'T blend `inProgressCount` in or hunters
   // visually "fill" the bar before they've actually completed anything.
   const verified = bounty.currentHuntersCount;
   const inProgress = bounty.inProgressCount;
-  const progressPct =
-    total > 0 ? Math.min(100, Math.round((verified / total) * 100)) : 0;
+  // Lottery bounties don't have a fillable bar — anyone can join, the
+  // pool of participants just grows until N winners are drawn at the
+  // end. Show participants over winners but with a softer visual.
+  const progressPct = isLottery
+    ? 0
+    : total > 0
+      ? Math.min(100, Math.round((verified / total) * 100))
+      : 0;
   const tokenSymbol = bounty.rewardTokenSymbol;
   const tokenName = (bounty.tweetCachedData?.authorName ?? "").trim();
 
@@ -103,7 +110,14 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
               </p>
             </div>
           </div>
-          <StatusPill eligible={eligible} bounty={bounty} />
+          <div className="flex items-center gap-1.5">
+            {isLottery && (
+              <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-text">
+                Lottery
+              </span>
+            )}
+            <StatusPill eligible={eligible} bounty={bounty} />
+          </div>
         </div>
 
         {/* Tweet preview ------------------------------------------- */}
@@ -139,11 +153,22 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
               className="font-mono text-caption text-text-tertiary tabular-nums"
               data-numeric
             >
-              {verified}/{total}
-              {inProgress > 0 && (
-                <span className="ml-1.5 text-text-quaternary">
-                  · {inProgress} hunting
-                </span>
+              {isLottery ? (
+                <>
+                  {verified + inProgress}{" "}
+                  <span className="text-text-quaternary">
+                    joined · {total} winners
+                  </span>
+                </>
+              ) : (
+                <>
+                  {verified}/{total}
+                  {inProgress > 0 && (
+                    <span className="ml-1.5 text-text-quaternary">
+                      · {inProgress} hunting
+                    </span>
+                  )}
+                </>
               )}
             </span>
           </div>

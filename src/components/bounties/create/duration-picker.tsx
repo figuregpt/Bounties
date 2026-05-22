@@ -5,13 +5,11 @@ import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DURATION_HOURS_OPTIONS,
-  FIVE_MINUTES_HOURS,
   type DurationHours,
 } from "@/lib/validation/bounty";
 import { useNow } from "@/hooks/useNow";
 
-const LABELS: Record<number, string> = {
-  [FIVE_MINUTES_HOURS]: "5m",
+const LABELS: Record<DurationHours, string> = {
   6: "6h",
   12: "12h",
   24: "24h",

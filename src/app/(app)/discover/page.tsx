@@ -31,7 +31,7 @@ export default async function DiscoverPage() {
       { sortBy: "newest", showIneligible: true },
       { limit: 20 },
     ),
-    getLiveActivities({ limit: 15 }),
+    getLiveActivities({ limit: 10 }),
     getDb()
       .select({ sum: sum(bounties.totalPoolUsd) })
       .from(bounties)

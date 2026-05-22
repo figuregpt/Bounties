@@ -52,9 +52,10 @@ const OPTIONS: {
     value: "pool_lottery",
     icon: Dice5,
     title: "Random lottery",
-    description: "Random hunters win — most bot-resistant.",
+    description:
+      "Anyone can join; N random winners get paid when the bounty ends.",
     bestFor: "Large campaigns, anti-spam",
-    comingPhase: "Phase 9",
+    comingPhase: null,
   },
   {
     value: "quality_tiered",

@@ -157,7 +157,13 @@ export async function POST(req: NextRequest) {
       { status: 409 },
     );
   }
-  if (bounty.currentHuntersCount >= bounty.maxHunters) {
+  // For fixed_slot bounties the slot count caps participants. For
+  // pool_lottery anyone can join — N winners are drawn at random when
+  // the bounty ends, so capping participants would defeat the model.
+  if (
+    bounty.distributionModel !== "pool_lottery" &&
+    bounty.currentHuntersCount >= bounty.maxHunters
+  ) {
     return NextResponse.json(
       { ok: false, error: "Bounty is full" },
       { status: 409 },
