@@ -42,10 +42,13 @@ function init(): Db {
 
   const instance = drizzle(client, { schema });
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForDb.__bountyPg = client;
-    globalForDb.__bountyDb = instance;
-  }
+  // Cache in globalThis in BOTH dev and prod. Without this, every
+  // `init()` call (e.g., from a fresh Server Component module on
+  // a cold request) opens another postgres pool — 10 sockets per
+  // pool — and Postgres exhausts its `max_connections` ceiling
+  // ("sorry, too many clients already").
+  globalForDb.__bountyPg = client;
+  globalForDb.__bountyDb = instance;
   return instance;
 }
 
