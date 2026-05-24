@@ -224,33 +224,39 @@ async function handlePost(
       );
     }
 
-    const [{ count: filled }] = await db
-      .select({
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(claims)
-      .where(
-        and(
-          eq(claims.bountyId, bounty.id),
-          inArray(claims.status, [
-            "initial_verified",
-            "awaiting_final",
-            "verified",
-            "claiming",
-            "claimed_reward",
-          ]),
-        ),
-      );
-    if (filled >= bounty.maxHunters) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Sorry, this bounty just filled up. The reward pool is fully claimed.",
-          errorCode: "bounty_filled",
-        },
-        { status: 409 },
-      );
+    // Slot-cap gate. Skipped entirely for pool_lottery — there's no
+    // cap; participants pile in and N random winners are drawn at
+    // endsAt. Fixed-slot / quadratic / tiered enforce the ceiling so
+    // a 6th hunter can't sneak past a 5-slot bounty during a race.
+    if (bounty.distributionModel !== "pool_lottery") {
+      const [{ count: filled }] = await db
+        .select({
+          count: sql<number>`COUNT(*)::int`,
+        })
+        .from(claims)
+        .where(
+          and(
+            eq(claims.bountyId, bounty.id),
+            inArray(claims.status, [
+              "initial_verified",
+              "awaiting_final",
+              "verified",
+              "claiming",
+              "claimed_reward",
+            ]),
+          ),
+        );
+      if (filled >= bounty.maxHunters) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "Sorry, this bounty just filled up. The reward pool is fully claimed.",
+            errorCode: "bounty_filled",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Notify any open detail-page tabs that the in-progress count
