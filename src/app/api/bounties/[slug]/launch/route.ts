@@ -10,7 +10,10 @@ import {
   solToLamports,
 } from "@/lib/solana/escrow";
 import { currentNetwork } from "@/lib/tokens/canonical";
-import { getTreasuryPublicKeyOrNull } from "@/lib/solana/env";
+import {
+  getRevenueWalletPublicKeyOrNull,
+  getTreasuryPublicKeyOrNull,
+} from "@/lib/solana/env";
 import { verifyEscrowTx } from "@/lib/solana/verify-tx";
 import {
   BOUNTY_CREATION_FEE_USD,
@@ -181,19 +184,46 @@ export async function POST(
         { status: 409 },
       );
     }
-    const expectedRaw =
+    // Two-destination flow: when REVENUE_WALLET_PUBLIC_KEY is set, the
+    // pool and creation-fee land in different wallets. We tell the
+    // verifier both expected amounts; it falls back to the legacy
+    // single-transfer mode automatically if a stale browser tab sent
+    // the combined amount to treasury.
+    const revenueWallet = getRevenueWalletPublicKeyOrNull();
+    const poolNumeric = Number(bounty.totalPool);
+    const expectedPoolRaw =
       bounty.rewardTokenSymbol === "SOL"
-        ? solToLamports(totalEscrowAmount)
-        : toRawAmount(totalEscrowAmount, bounty.rewardTokenDecimals);
+        ? solToLamports(poolNumeric)
+        : toRawAmount(poolNumeric, bounty.rewardTokenDecimals);
+    const expectedFeeRaw =
+      creationFeeAmount > 0
+        ? bounty.rewardTokenSymbol === "SOL"
+          ? solToLamports(creationFeeAmount)
+          : toRawAmount(creationFeeAmount, bounty.rewardTokenDecimals)
+        : BigInt(0);
     const expectedMint =
       bounty.rewardTokenSymbol === "SOL" ? null : bounty.rewardTokenMint;
+
+    // When fee separation is enabled, treasury should only receive the
+    // pool. Without it, treasury receives the combined amount as before.
+    const treasuryExpected =
+      revenueWallet && creationFeeAmount > 0
+        ? expectedPoolRaw
+        : expectedPoolRaw + expectedFeeRaw;
 
     const result = await verifyEscrowTx({
       signature: parsed.data.escrowTxSignature,
       expectedFromWallet: user.walletAddress,
       expectedTreasuryWallet: treasury,
-      expectedAmount: expectedRaw,
+      expectedAmount: treasuryExpected,
       expectedMint,
+      expectedFee:
+        revenueWallet && creationFeeAmount > 0
+          ? {
+              recipientWallet: revenueWallet,
+              amount: expectedFeeRaw,
+            }
+          : undefined,
     });
     if (!result.ok) {
       return NextResponse.json(
@@ -203,6 +233,11 @@ export async function POST(
           errorCode: result.code,
         },
         { status: 400 },
+      );
+    }
+    if (result.feeRoutedTo === "treasury_legacy") {
+      console.warn(
+        `[launch] bounty ${bounty.slug} used legacy single-transfer mode — creation fee landed in treasury and will be picked up by the next sweep`,
       );
     }
     escrowTxHash = parsed.data.escrowTxSignature;

@@ -43,10 +43,30 @@ export type VerifyEscrowArgs = {
   expectedAmount: bigint;
   /** Token mint, or `null` for native SOL transfers. */
   expectedMint: string | null;
+  /** Optional: when a separate revenue wallet is configured the tx
+   *  should also contain a second transfer of `fee.amount` to
+   *  `fee.recipientWallet`. If we can't find it but the treasury
+   *  transfer covered `expectedAmount + fee.amount` (the legacy single-
+   *  transfer combined mode), the call still succeeds — that's how we
+   *  keep stale-browser-tab launches from bricking right after we
+   *  flip on REVENUE_WALLET_PUBLIC_KEY.
+   */
+  expectedFee?: {
+    recipientWallet: string;
+    amount: bigint;
+  };
 };
 
 export type VerifyEscrowResult =
-  | { ok: true; confirmedAt: Date; actualAmount: bigint }
+  | {
+      ok: true;
+      confirmedAt: Date;
+      actualAmount: bigint;
+      /** Where the creation fee actually landed. "revenue" = expected
+       *  new path; "treasury_legacy" = single-transfer fallback,
+       *  caller should sweep manually after activation. */
+      feeRoutedTo?: "revenue" | "treasury_legacy" | "none";
+    }
   | { ok: false; reason: string; code: VerifyFailureCode };
 
 export type VerifyFailureCode =
@@ -91,20 +111,24 @@ export async function verifyEscrowTx(
 
   /* ---- Native SOL branch ----------------------------------------- */
   if (args.expectedMint === null) {
-    const match = pickParsedTransfer(tx.transaction.message.instructions).find(
-      (i) =>
-        i.program === "system" &&
-        i.parsed?.type === "transfer" &&
-        (i.parsed.info?.destination as string | undefined) === args.expectedTreasuryWallet,
+    const systemTransfers = pickParsedTransfer(
+      tx.transaction.message.instructions,
+    ).filter(
+      (i) => i.program === "system" && i.parsed?.type === "transfer",
     );
-    if (!match) {
+    const toTreasury = systemTransfers.find(
+      (i) =>
+        (i.parsed.info?.destination as string | undefined) ===
+        args.expectedTreasuryWallet,
+    );
+    if (!toTreasury) {
       return {
         ok: false,
         code: "recipient_mismatch",
         reason: "No SOL transfer to the configured treasury found in this tx",
       };
     }
-    const source = match.parsed?.info?.source as string | undefined;
+    const source = toTreasury.parsed?.info?.source as string | undefined;
     if (source !== args.expectedFromWallet) {
       return {
         ok: false,
@@ -112,28 +136,91 @@ export async function verifyEscrowTx(
         reason: `Sender mismatch: expected ${args.expectedFromWallet}, got ${source}`,
       };
     }
-    const lamports = BigInt(String(match.parsed?.info?.lamports ?? "0"));
-    if (lamports < args.expectedAmount) {
+    const treasuryLamports = BigInt(
+      String(toTreasury.parsed?.info?.lamports ?? "0"),
+    );
+
+    // No fee expectation → classic single-transfer verification.
+    if (!args.expectedFee) {
+      if (treasuryLamports < args.expectedAmount) {
+        return {
+          ok: false,
+          code: "amount_too_low",
+          reason: `Transferred ${treasuryLamports} lamports, expected ≥ ${args.expectedAmount}`,
+        };
+      }
+      return {
+        ok: true,
+        confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
+        actualAmount: treasuryLamports,
+        feeRoutedTo: "none",
+      };
+    }
+
+    // Fee expectation set. Two paths:
+    //   • new client → second transfer to revenue wallet, treasury gets
+    //     exactly `expectedAmount`, revenue gets `expectedFee.amount`
+    //   • old client (stale tab) → single transfer to treasury for the
+    //     combined amount; fall back so we don't brick the launch
+    const toRevenue = systemTransfers.find(
+      (i) =>
+        (i.parsed.info?.destination as string | undefined) ===
+          args.expectedFee?.recipientWallet &&
+        (i.parsed.info?.source as string | undefined) ===
+          args.expectedFromWallet,
+    );
+    if (toRevenue) {
+      const feeLamports = BigInt(
+        String(toRevenue.parsed?.info?.lamports ?? "0"),
+      );
+      if (treasuryLamports < args.expectedAmount) {
+        return {
+          ok: false,
+          code: "amount_too_low",
+          reason: `Treasury transfer: ${treasuryLamports} lamports, expected ≥ ${args.expectedAmount}`,
+        };
+      }
+      if (feeLamports < args.expectedFee.amount) {
+        return {
+          ok: false,
+          code: "amount_too_low",
+          reason: `Revenue transfer: ${feeLamports} lamports, expected ≥ ${args.expectedFee.amount}`,
+        };
+      }
+      return {
+        ok: true,
+        confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
+        actualAmount: treasuryLamports,
+        feeRoutedTo: "revenue",
+      };
+    }
+
+    // Legacy fallback: combined amount went to treasury.
+    const combined = args.expectedAmount + args.expectedFee.amount;
+    if (treasuryLamports < combined) {
       return {
         ok: false,
         code: "amount_too_low",
-        reason: `Transferred ${lamports} lamports, expected ≥ ${args.expectedAmount}`,
+        reason: `Single-transfer fallback: treasury got ${treasuryLamports} lamports, expected ≥ ${combined}`,
       };
     }
     return {
       ok: true,
       confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
-      actualAmount: lamports,
+      actualAmount: treasuryLamports,
+      feeRoutedTo: "treasury_legacy",
     };
   }
 
   /* ---- SPL token branch ------------------------------------------ */
-  const transfer = pickParsedTransfer(tx.transaction.message.instructions).find(
+  const splTransfers = pickParsedTransfer(
+    tx.transaction.message.instructions,
+  ).filter(
     (i) =>
       (i.program === "spl-token" || i.program === "spl-token-2022") &&
       (i.parsed?.type === "transfer" || i.parsed?.type === "transferChecked"),
   );
-  if (!transfer) {
+  if (splTransfers.length === 0) {
     return {
       ok: false,
       code: "no_matching_transfer",
@@ -141,88 +228,144 @@ export async function verifyEscrowTx(
     };
   }
 
-  const info = transfer.parsed?.info as
-    | {
-        source?: string;
-        destination?: string;
-        mint?: string;
-        amount?: string;
-        tokenAmount?: { amount?: string; mint?: string };
+  // Resolve every SPL transfer's source/destination ATA owners up-front
+  // so we can pick which one is the treasury leg and which (if any) is
+  // the revenue leg without re-walking instructions.
+  type ResolvedTransfer = {
+    rawAmount: bigint;
+    srcOwner: string | null;
+    dstOwner: string | null;
+    srcMint: string | null;
+    dstMint: string | null;
+  };
+  const resolved: ResolvedTransfer[] = await Promise.all(
+    splTransfers.map(async (t) => {
+      const info = t.parsed?.info as
+        | {
+            source?: string;
+            destination?: string;
+            amount?: string;
+            tokenAmount?: { amount?: string };
+          }
+        | undefined;
+      const sourceAta = info?.source;
+      const destAta = info?.destination;
+      if (!sourceAta || !destAta) {
+        return {
+          rawAmount: BigInt(0),
+          srcOwner: null,
+          dstOwner: null,
+          srcMint: null,
+          dstMint: null,
+        };
       }
-    | undefined;
+      const [srcInfo, dstInfo] = await Promise.all([
+        connection.getParsedAccountInfo(new PublicKey(sourceAta)),
+        connection.getParsedAccountInfo(new PublicKey(destAta)),
+      ]);
+      return {
+        rawAmount: BigInt(info?.tokenAmount?.amount ?? info?.amount ?? "0"),
+        srcOwner: readAtaOwner(srcInfo.value?.data),
+        dstOwner: readAtaOwner(dstInfo.value?.data),
+        srcMint: readAtaMint(srcInfo.value?.data),
+        dstMint: readAtaMint(dstInfo.value?.data),
+      };
+    }),
+  );
 
-  // `transferChecked` carries `mint` directly. Plain `transfer` doesn't,
-  // so we resolve it from the source ATA's owner record below.
-  const declaredMint = info?.mint ?? info?.tokenAmount?.mint ?? null;
-  if (declaredMint && declaredMint !== args.expectedMint) {
-    return {
-      ok: false,
-      code: "mint_mismatch",
-      reason: `Token mint mismatch: expected ${args.expectedMint}, got ${declaredMint}`,
-    };
-  }
-
-  const sourceAta = info?.source;
-  const destAta = info?.destination;
-  if (!sourceAta || !destAta) {
-    return {
-      ok: false,
-      code: "no_matching_transfer",
-      reason: "Parsed transfer is missing source/destination",
-    };
-  }
-
-  // Verify ATA ownership. This is the critical check that stops spoof
-  // attacks: an attacker can pass any signature, but the ATA owner is
-  // recorded on-chain inside the token account itself — they can't fake
-  // the relationship between the address that signed and the ATA used.
-  const [srcInfo, dstInfo] = await Promise.all([
-    connection.getParsedAccountInfo(new PublicKey(sourceAta)),
-    connection.getParsedAccountInfo(new PublicKey(destAta)),
-  ]);
-
-  const srcOwner = readAtaOwner(srcInfo.value?.data);
-  const dstOwner = readAtaOwner(dstInfo.value?.data);
-  const srcMint = readAtaMint(srcInfo.value?.data);
-  const dstMint = readAtaMint(dstInfo.value?.data);
-
-  if (srcOwner !== args.expectedFromWallet) {
-    return {
-      ok: false,
-      code: "sender_mismatch",
-      reason: `Sender mismatch: ATA ${sourceAta} is owned by ${srcOwner ?? "unknown"}, expected ${args.expectedFromWallet}`,
-    };
-  }
-  if (dstOwner !== args.expectedTreasuryWallet) {
+  const toTreasury = resolved.find(
+    (r) =>
+      r.srcOwner === args.expectedFromWallet &&
+      r.dstOwner === args.expectedTreasuryWallet &&
+      r.srcMint === args.expectedMint &&
+      r.dstMint === args.expectedMint,
+  );
+  if (!toTreasury) {
+    // Check whether we found a transfer that's close-but-wrong so we
+    // can give a useful failure code.
+    const wrongMint = resolved.find(
+      (r) =>
+        (r.srcMint && r.srcMint !== args.expectedMint) ||
+        (r.dstMint && r.dstMint !== args.expectedMint),
+    );
+    if (wrongMint) {
+      return {
+        ok: false,
+        code: "mint_mismatch",
+        reason: `ATA mint mismatch: src=${wrongMint.srcMint}, dst=${wrongMint.dstMint}, expected ${args.expectedMint}`,
+      };
+    }
     return {
       ok: false,
       code: "recipient_mismatch",
-      reason: `Recipient mismatch: ATA ${destAta} is owned by ${dstOwner ?? "unknown"}, expected treasury ${args.expectedTreasuryWallet}`,
-    };
-  }
-  if (srcMint !== args.expectedMint || dstMint !== args.expectedMint) {
-    return {
-      ok: false,
-      code: "mint_mismatch",
-      reason: `ATA mint mismatch: src=${srcMint}, dst=${dstMint}, expected ${args.expectedMint}`,
+      reason: `No SPL transfer to treasury (${args.expectedTreasuryWallet}) from creator (${args.expectedFromWallet}) for mint ${args.expectedMint}`,
     };
   }
 
-  const rawAmount = BigInt(
-    info?.tokenAmount?.amount ?? info?.amount ?? "0",
+  // No fee expectation → classic single-transfer.
+  if (!args.expectedFee) {
+    if (toTreasury.rawAmount < args.expectedAmount) {
+      return {
+        ok: false,
+        code: "amount_too_low",
+        reason: `Transferred ${toTreasury.rawAmount} raw units, expected ≥ ${args.expectedAmount}`,
+      };
+    }
+    return {
+      ok: true,
+      confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
+      actualAmount: toTreasury.rawAmount,
+      feeRoutedTo: "none",
+    };
+  }
+
+  // Fee expected — try new path first (second transfer to revenue),
+  // then fall back to legacy combined-amount-to-treasury mode.
+  const toRevenue = resolved.find(
+    (r) =>
+      r !== toTreasury &&
+      r.srcOwner === args.expectedFromWallet &&
+      r.dstOwner === args.expectedFee?.recipientWallet &&
+      r.srcMint === args.expectedMint &&
+      r.dstMint === args.expectedMint,
   );
-  if (rawAmount < args.expectedAmount) {
+  if (toRevenue) {
+    if (toTreasury.rawAmount < args.expectedAmount) {
+      return {
+        ok: false,
+        code: "amount_too_low",
+        reason: `Treasury transfer: ${toTreasury.rawAmount} raw units, expected ≥ ${args.expectedAmount}`,
+      };
+    }
+    if (toRevenue.rawAmount < args.expectedFee.amount) {
+      return {
+        ok: false,
+        code: "amount_too_low",
+        reason: `Revenue transfer: ${toRevenue.rawAmount} raw units, expected ≥ ${args.expectedFee.amount}`,
+      };
+    }
+    return {
+      ok: true,
+      confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
+      actualAmount: toTreasury.rawAmount,
+      feeRoutedTo: "revenue",
+    };
+  }
+
+  // Legacy fallback — combined amount in the single treasury transfer.
+  const combined = args.expectedAmount + args.expectedFee.amount;
+  if (toTreasury.rawAmount < combined) {
     return {
       ok: false,
       code: "amount_too_low",
-      reason: `Transferred ${rawAmount} raw units, expected ≥ ${args.expectedAmount}`,
+      reason: `Single-transfer fallback: treasury got ${toTreasury.rawAmount} raw units, expected ≥ ${combined}`,
     };
   }
-
   return {
     ok: true,
     confirmedAt: tx.blockTime ? new Date(tx.blockTime * 1000) : new Date(),
-    actualAmount: rawAmount,
+    actualAmount: toTreasury.rawAmount,
+    feeRoutedTo: "treasury_legacy",
   };
 }
 

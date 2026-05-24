@@ -80,9 +80,18 @@ type Props = {
    *  passed down. `null` only in `mock` mode where the env isn't
    *  required. */
   treasuryAddress: string | null;
+  /** Revenue wallet for platform fees. When non-null, the launch tx
+   *  becomes two transfers (pool → treasury, creation fee → revenue).
+   *  Null means fees stay in the treasury (legacy mode). */
+  revenueAddress: string | null;
 };
 
-export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props) {
+export function CreateBountyClient({
+  user,
+  escrowMode,
+  treasuryAddress,
+  revenueAddress,
+}: Props) {
   const router = useRouter();
   const {
     address: connectedWallet,
@@ -250,30 +259,55 @@ export function CreateBountyClient({ user, escrowMode, treasuryAddress }: Props)
         if (!token) {
           throw new Error("No reward token selected");
         }
-        // Bake the creation fee into the escrow ask so the modal's
-        // "You pay now" total is what we actually charge. Backend
-        // re-derives the same total when verifying the signature.
-        // Devnet tokens often have $0 priceUsd (no DexScreener data);
-        // dividing would yield Infinity — so we skip the fee on
-        // unpriced tokens. The launch route mirrors the same rule.
+        // Backend re-derives the same fee amount when verifying the
+        // signature. Devnet tokens often have $0 priceUsd → skip the
+        // fee. The launch route mirrors the same rule.
         const creationFeeInToken =
           token.priceUsd > 0
             ? BOUNTY_CREATION_FEE_USD / token.priceUsd
             : 0;
-        const escrowAmount = totalPool + creationFeeInToken;
+        // When the platform has a separate revenue wallet, the pool
+        // and the fee are physically separated — pool to treasury,
+        // creation fee to revenue. Otherwise we fold them into a
+        // single combined transfer to treasury (legacy mode).
+        const splitFee = revenueAddress != null && creationFeeInToken > 0;
+        const treasuryAmount = splitFee
+          ? totalPool
+          : totalPool + creationFeeInToken;
         const tx = await buildEscrowTransaction({
           connection,
           from: fromPubkey,
           treasuryAddress,
           transfer:
             token.symbol === "SOL"
-              ? { kind: "sol", lamports: solToLamports(escrowAmount) }
+              ? { kind: "sol", lamports: solToLamports(treasuryAmount) }
               : {
                   kind: "spl",
                   mint: token.mint,
                   decimals: token.decimals,
-                  rawAmount: toRawAmount(escrowAmount, token.decimals),
+                  rawAmount: toRawAmount(treasuryAmount, token.decimals),
                 },
+          fee:
+            splitFee && revenueAddress
+              ? {
+                  revenueAddress,
+                  transfer:
+                    token.symbol === "SOL"
+                      ? {
+                          kind: "sol",
+                          lamports: solToLamports(creationFeeInToken),
+                        }
+                      : {
+                          kind: "spl",
+                          mint: token.mint,
+                          decimals: token.decimals,
+                          rawAmount: toRawAmount(
+                            creationFeeInToken,
+                            token.decimals,
+                          ),
+                        },
+                }
+              : undefined,
         });
         // wallet-adapter signs + submits + returns the base58 sig.
         // `connection` is the same RPC endpoint configured in the

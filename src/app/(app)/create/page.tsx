@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth";
 import { escrowMode } from "@/lib/solana/escrow";
-import { getTreasuryPublicKeyOrNull } from "@/lib/solana/env";
+import {
+  getRevenueWalletPublicKeyOrNull,
+  getTreasuryPublicKeyOrNull,
+} from "@/lib/solana/env";
 import { CreateBountyClient } from "./create-bounty-client";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +31,7 @@ export default async function CreatePage() {
       }}
       escrowMode={escrowMode()}
       treasuryAddress={getTreasuryPublicKeyOrNull()}
+      revenueAddress={getRevenueWalletPublicKeyOrNull()}
     />
   );
 }

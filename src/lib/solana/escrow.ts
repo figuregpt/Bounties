@@ -66,6 +66,23 @@ export type EscrowTransferKind =
     };
 
 /**
+ * Optional second transfer for the creation fee. When provided, the
+ * built tx becomes a two-instruction transfer (pool to treasury + fee
+ * to revenue wallet) so platform earnings stay physically separated
+ * from hunter rewards. Same SOL-vs-SPL discriminator as the pool kind;
+ * we require them to match — mixing SOL pool with SPL fee (or vice
+ * versa) makes no sense and would silently break verification.
+ */
+export type EscrowFeeTransfer =
+  | { kind: "sol"; lamports: bigint }
+  | {
+      kind: "spl";
+      mint: string;
+      rawAmount: bigint;
+      decimals: number;
+    };
+
+/**
  * Builds an unsigned transaction transferring `transfer` from the user
  * to the treasury wallet. The caller signs + submits via Privy.
  *
@@ -82,13 +99,26 @@ export async function buildEscrowTransaction(args: {
    *  by the page-component server shell via getTreasuryPublicKey(). */
   treasuryAddress: string;
   transfer: EscrowTransferKind;
+  /** Optional creation-fee transfer routed to a separate revenue wallet.
+   *  When omitted, the tx is single-instruction and the entire amount
+   *  (pool + fee) is expected on `transfer`. */
+  fee?: {
+    revenueAddress: string;
+    transfer: EscrowFeeTransfer;
+  };
 }): Promise<Transaction> {
   if (!args.treasuryAddress) {
     throw new Error(
       "buildEscrowTransaction: treasuryAddress is required (resolve on server, pass as prop)",
     );
   }
+  if (args.fee && args.fee.transfer.kind !== args.transfer.kind) {
+    throw new Error(
+      "buildEscrowTransaction: pool and fee transfer kinds must match (both 'sol' or both 'spl')",
+    );
+  }
   const to = new PublicKey(args.treasuryAddress);
+  const feeTo = args.fee ? new PublicKey(args.fee.revenueAddress) : null;
   const tx = new Transaction();
 
   if (args.transfer.kind === "sol") {
@@ -99,6 +129,15 @@ export async function buildEscrowTransaction(args: {
         lamports: Number(args.transfer.lamports),
       }),
     );
+    if (feeTo && args.fee && args.fee.transfer.kind === "sol") {
+      tx.add(
+        SystemProgram.transfer({
+          fromPubkey: args.from,
+          toPubkey: feeTo,
+          lamports: Number(args.fee.transfer.lamports),
+        }),
+      );
+    }
   } else {
     // For SPL we delegate to the dedicated builder in spl-transfer.ts so
     // this file doesn't pull in `@solana/spl-token` types unless an SPL
@@ -113,6 +152,17 @@ export async function buildEscrowTransaction(args: {
         rawAmount: args.transfer.rawAmount,
       })),
     );
+    if (feeTo && args.fee && args.fee.transfer.kind === "spl") {
+      tx.add(
+        ...(await buildSplTransferInstruction({
+          connection: args.connection,
+          from: args.from,
+          to: feeTo,
+          mint: new PublicKey(args.fee.transfer.mint),
+          rawAmount: args.fee.transfer.rawAmount,
+        })),
+      );
+    }
   }
 
   const { blockhash, lastValidBlockHeight } =

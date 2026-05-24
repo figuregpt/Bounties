@@ -10,6 +10,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { sendReward } from "@/lib/solana/treasury";
+import { getRevenueWalletPublicKeyOrNull } from "@/lib/solana/env";
 import { isValidSolanaWallet } from "@/lib/solana/verify-tx";
 import { updateClaimStatus } from "@/lib/bounties/claim-status";
 import { publishEvent } from "@/lib/realtime/publisher";
@@ -215,10 +216,11 @@ export async function POST(
 
   /* ---- Send the reward --------------------------------------------- */
   // sendReward validates recipient (on-curve), pre-flights treasury
-  // balance, then retries up to 3x with backoff. We pass the bounty's
-  // decimals so SPL amounts scale correctly. recipientPreverified
-  // skips the registered-user lookup — the hunter is already
-  // authenticated, no extra DB check needed.
+  // balance, then retries up to 3x with backoff. When the revenue
+  // wallet is configured, the 5% fee is co-transferred in the same
+  // on-chain tx so payout and fee collection are atomic — no risk of
+  // sending the net reward but leaving the fee stuck in treasury.
+  const revenueWallet = getRevenueWalletPublicKeyOrNull();
   const tx = await sendReward({
     toWalletAddress: recipientWallet,
     tokenMint: claim.rewardTokenMint,
@@ -229,6 +231,10 @@ export async function POST(
     claimId: claim.id,
     bountyId: claim.bountyId,
     recipientPreverified: true,
+    fee:
+      revenueWallet && feeAmount > 0
+        ? { toWalletAddress: revenueWallet, amount: feeAmount }
+        : undefined,
   });
 
   if (tx.ok) {

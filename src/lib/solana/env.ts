@@ -51,6 +51,23 @@ export function getTreasuryPublicKeyOrNull(): string | null {
 }
 
 /**
+ * Resolves the revenue wallet — the destination for platform fees
+ * (the $1 creation fee + the 5% claim fee). When unset, fees stay in
+ * the treasury wallet (legacy behaviour). When set:
+ *   • bounty creation tx becomes two transfers (pool → treasury,
+ *     creation fee → revenue)
+ *   • claim payout tx becomes two transfers (net → hunter,
+ *     5% fee → revenue)
+ * This separates funds owed to hunters / refundable to creators from
+ * platform earnings, so a glance at either wallet tells you what it
+ * represents.
+ */
+export function getRevenueWalletPublicKeyOrNull(): string | null {
+  const raw = process.env.REVENUE_WALLET_PUBLIC_KEY?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
+/**
  * Base58 private key for the treasury keypair. Loaded only when a
  * real outbound tx is being signed. Stays in this module so the only
  * import path is auditable.

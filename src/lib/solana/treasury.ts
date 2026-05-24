@@ -63,6 +63,14 @@ export type RewardTransfer = {
    *  who is always registered — set this true to skip the redundant
    *  lookup). */
   recipientPreverified?: boolean;
+  /** Optional fee co-transfer — bundles a second transfer to the
+   *  revenue wallet in the SAME on-chain tx so the payout and the fee
+   *  collection are atomic. Recipient is treated as system-side (no
+   *  user-table lookup). */
+  fee?: {
+    toWalletAddress: string;
+    amount: number;
+  };
 };
 
 export type RewardResult =
@@ -173,15 +181,38 @@ export async function sendReward(
     const rawAmount = isNative
       ? solToLamports(transfer.amount)
       : toRawAmount(transfer.amount, transfer.decimals);
+
+    // Fee co-transfer to the revenue wallet, bundled in the same tx.
+    // Validated against on-curve here so a bad env can't put the
+    // treasury into a corrupt tx at signing time.
+    const feeRecipient =
+      transfer.fee && transfer.fee.amount > 0
+        ? (() => {
+            if (!isValidSolanaWallet(transfer.fee!.toWalletAddress)) {
+              throw new Error(
+                `Fee recipient ${transfer.fee!.toWalletAddress} is not a valid on-curve Solana wallet`,
+              );
+            }
+            return new PublicKey(transfer.fee!.toWalletAddress);
+          })()
+        : null;
+    const feeRawAmount =
+      transfer.fee && transfer.fee.amount > 0
+        ? isNative
+          ? solToLamports(transfer.fee.amount)
+          : toRawAmount(transfer.fee.amount, transfer.decimals)
+        : BigInt(0);
+    const totalOutflow = rawAmount + feeRawAmount;
+
     if (!isNative) {
       await ensureTreasuryHasToken(
         connection,
         keypair.publicKey,
         transfer.tokenMint,
-        rawAmount,
+        totalOutflow,
       );
     } else {
-      await ensureTreasuryHasSol(connection, keypair.publicKey, rawAmount);
+      await ensureTreasuryHasSol(connection, keypair.publicKey, totalOutflow);
     }
 
     const signature = await sendWithRetry({
@@ -201,16 +232,37 @@ export async function sendReward(
               lamports: Number(rawAmount),
             }),
           );
+          if (feeRecipient && feeRawAmount > BigInt(0)) {
+            ixs.push(
+              SystemProgram.transfer({
+                fromPubkey: keypair.publicKey,
+                toPubkey: feeRecipient,
+                lamports: Number(feeRawAmount),
+              }),
+            );
+          }
         } else {
           const mint = new PublicKey(transfer.tokenMint);
-          const transferIxs = await buildSplTransferInstruction({
-            connection,
-            from: keypair.publicKey,
-            to: recipient,
-            mint,
-            rawAmount,
-          });
-          ixs.push(...transferIxs);
+          ixs.push(
+            ...(await buildSplTransferInstruction({
+              connection,
+              from: keypair.publicKey,
+              to: recipient,
+              mint,
+              rawAmount,
+            })),
+          );
+          if (feeRecipient && feeRawAmount > BigInt(0)) {
+            ixs.push(
+              ...(await buildSplTransferInstruction({
+                connection,
+                from: keypair.publicKey,
+                to: feeRecipient,
+                mint,
+                rawAmount: feeRawAmount,
+              })),
+            );
+          }
         }
         return ixs;
       },
