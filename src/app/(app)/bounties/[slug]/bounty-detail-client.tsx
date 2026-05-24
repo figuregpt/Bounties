@@ -620,10 +620,14 @@ function ActionPanel({
   // the bar.
   const verified = bounty.currentHuntersCount;
   const inProgress = bounty.inProgressCount;
+  // Lottery bounties accept any number of participants; the progress
+  // bar / "X of Y claimed" framing is misleading there — maxHunters
+  // is the number of WINNERS drawn at endsAt, not a slot cap.
+  const isLottery = bounty.distributionModel === "pool_lottery";
   const progress = useMemo(() => {
-    if (bounty.maxHunters === 0) return 0;
+    if (isLottery || bounty.maxHunters === 0) return 0;
     return Math.min(100, Math.round((verified / bounty.maxHunters) * 100));
-  }, [verified, bounty.maxHunters]);
+  }, [isLottery, verified, bounty.maxHunters]);
 
   return (
     <aside className="lg:sticky lg:top-24 lg:self-start">
@@ -640,19 +644,33 @@ function ActionPanel({
         <RewardBlock bounty={bounty} dimmed={!uiState.canHunt && !uiState.canClaim && uiState.kind !== "claimed"} />
 
         <div className="space-y-1.5">
-          <div className="h-1.5 overflow-hidden rounded-full bg-bg-elevated">
-            <div
-              className="h-full rounded-full bg-accent-primary"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          {/* Progress bar only makes sense for capped distributions —
+              lottery bounties accept unlimited participants and just
+              draw N winners at endsAt, so the bar would always look
+              empty or be capped artificially. */}
+          {!isLottery && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-elevated">
+              <div
+                className="h-full rounded-full bg-accent-primary"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          )}
           <p
             className="flex items-center justify-between text-caption text-text-tertiary tabular-nums"
             data-numeric
           >
             <span className="inline-flex items-center gap-1">
               <Users className="size-3" strokeWidth={2} />
-              {verified} of {bounty.maxHunters} claimed
+              {isLottery ? (
+                <>
+                  {verified} joined · {bounty.maxHunters} winners
+                </>
+              ) : (
+                <>
+                  {verified} of {bounty.maxHunters} claimed
+                </>
+              )}
               {inProgress > 0 && (
                 <span className="ml-1 text-text-quaternary">
                   · {inProgress} hunting
