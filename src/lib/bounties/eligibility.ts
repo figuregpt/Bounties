@@ -18,7 +18,8 @@ export type EligibilityRequirementKey =
   | "reputation_tier"
   | "previous_bounties"
   | "reputation_score"
-  | "smart_followers";
+  | "smart_followers"
+  | "holder_token";
 
 export type EligibilityRequirement = {
   key: EligibilityRequirementKey;
@@ -28,6 +29,12 @@ export type EligibilityRequirement = {
   /** What the user actually has, for the "you have X" hint. */
   actualLabel: string;
   met: boolean;
+  /** True when this requirement can't be evaluated server-side (e.g.
+   *  holder_token needs the hunter's wallet, which is browser state).
+   *  The UI renders these as a neutral info row instead of red/green so
+   *  users see the rule before they click Hunt and the balance check
+   *  runs. */
+  deferred?: boolean;
 };
 
 export type EligibilityResult = {
@@ -126,6 +133,24 @@ export function checkEligibility(
       requiredLabel: bounty.requireReputationTier,
       actualLabel: user.accountTier,
       met: tierAtLeast(user.accountTier, bounty.requireReputationTier),
+    });
+  }
+
+  // Holder requirement — token gate evaluated against the hunter's
+  // connected wallet at slot reservation time (see /api/claims). We can't
+  // run the on-chain check here because eligibility is computed on the
+  // server with no wallet context, so we surface the rule as a deferred
+  // info row. Doesn't count against the `eligible` flag — the API
+  // double-checks at hunt time and a clean error lands in the overlay.
+  const holder = bounty.eligibilityFilters?.holderRequirement;
+  if (holder && holder.minAmount > 0) {
+    reqs.push({
+      key: "holder_token",
+      label: "Wallet holdings",
+      requiredLabel: `Hold ${intFmt.format(holder.minAmount)}+ ${holder.symbol}`,
+      actualLabel: "checked when you hunt",
+      met: true,
+      deferred: true,
     });
   }
 

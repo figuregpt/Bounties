@@ -1,4 +1,4 @@
-import { Check, CircleAlert, ShieldCheck, X } from "lucide-react";
+import { Check, CircleAlert, Info, ShieldCheck, Wallet, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EligibilityResult } from "@/lib/bounties/eligibility";
 
@@ -82,13 +82,15 @@ function CardVariant({
             key={r.key}
             className="inline-flex items-center gap-1 text-caption text-text-secondary"
           >
-            {r.met ? (
+            {r.deferred ? (
+              <Info className="size-3 text-text-tertiary" strokeWidth={2.5} />
+            ) : r.met ? (
               <Check className="size-3 text-success" strokeWidth={2.5} />
             ) : (
               <X className="size-3 text-warning" strokeWidth={2.5} />
             )}
             <span>{r.requiredLabel}</span>
-            {!r.met && (
+            {(r.deferred || !r.met) && (
               <span className="text-text-tertiary">· {r.actualLabel}</span>
             )}
           </li>
@@ -146,7 +148,19 @@ function DetailVariant({
             className="flex items-center justify-between gap-3 px-4 py-2.5 text-small"
           >
             <div className="flex items-center gap-2">
-              {r.met ? (
+              {r.deferred ? (
+                r.key === "holder_token" ? (
+                  <Wallet
+                    className="size-3.5 text-text-tertiary"
+                    strokeWidth={2.25}
+                  />
+                ) : (
+                  <Info
+                    className="size-3.5 text-text-tertiary"
+                    strokeWidth={2.25}
+                  />
+                )
+              ) : r.met ? (
                 <Check className="size-3.5 text-success" strokeWidth={2.5} />
               ) : (
                 <X className="size-3.5 text-warning" strokeWidth={2.5} />
@@ -157,7 +171,11 @@ function DetailVariant({
             <span
               className={cn(
                 "text-caption",
-                r.met ? "text-text-tertiary" : "text-warning",
+                r.deferred
+                  ? "text-text-tertiary"
+                  : r.met
+                  ? "text-text-tertiary"
+                  : "text-warning",
               )}
             >
               {r.actualLabel}

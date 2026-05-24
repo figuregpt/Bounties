@@ -237,6 +237,31 @@ export function BountyDetailClient({
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <main className="space-y-8">
           <Hero bounty={bounty} tokenInfo={tokenInfo} />
+
+          {/* Eligibility lives right under the hero so hunters see the
+              gate (followers, account age, wallet holdings) before they
+              scroll through the tweet — surprising them with "you need
+              to hold X token" inside the Hunt overlay was bad UX. */}
+          <Section
+            title="Who can hunt this?"
+            caption={
+              eligibility.requirements.length === 0
+                ? "No filters — anyone with an X account can hunt this bounty."
+                : undefined
+            }
+          >
+            {eligibility.requirements.length === 0 ? (
+              <p className="rounded-[var(--radius-card)] border border-dashed border-border-default px-4 py-3 text-small text-text-tertiary">
+                Open to everyone.
+              </p>
+            ) : (
+              <EligibilityBanner
+                eligibility={eligibility}
+                variant="detail"
+              />
+            )}
+          </Section>
+
           <Section
             title="The tweet"
             caption={
@@ -276,26 +301,6 @@ export function BountyDetailClient({
               </div>
             </Section>
           )}
-
-          <Section
-            title="Who can hunt this?"
-            caption={
-              eligibility.requirements.length === 0
-                ? "No filters — anyone with an X account can hunt this bounty."
-                : undefined
-            }
-          >
-            {eligibility.requirements.length === 0 ? (
-              <p className="rounded-[var(--radius-card)] border border-dashed border-border-default px-4 py-3 text-small text-text-tertiary">
-                Open to everyone.
-              </p>
-            ) : (
-              <EligibilityBanner
-                eligibility={eligibility}
-                variant="detail"
-              />
-            )}
-          </Section>
 
           <HunterSection
             count={hunters.length}
