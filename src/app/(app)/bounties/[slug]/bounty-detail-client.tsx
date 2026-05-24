@@ -36,9 +36,13 @@ import { SafeTokenAvatar } from "@/components/bounties/token-avatar";
 import { TweetEmbed } from "@/components/bounties/tweet-embed";
 import { useHunt } from "@/hooks/useHunt";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
+import { useHolderCheck } from "@/hooks/useHolderCheck";
 import { useNow } from "@/hooks/useNow";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import type { EligibilityResult } from "@/lib/bounties/eligibility";
+import type {
+  EligibilityRequirement,
+  EligibilityResult,
+} from "@/lib/bounties/eligibility";
 import type {
   BountyUIState,
   CtaConfig,
@@ -100,6 +104,19 @@ export function BountyDetailClient({
     userId,
     initialClaim: claim,
   });
+
+  // Wallet holdings gate. The server emits a deferred `holder_token`
+  // row in eligibility; this hook upgrades it to met/unmet/needs_wallet
+  // once we know which wallet the hunter has connected.
+  const holderReq = bounty.eligibilityFilters?.holderRequirement ?? null;
+  const holderCheck = useHolderCheck({
+    requirement: holderReq,
+    wallet: connectedWallet,
+  });
+  const effectiveEligibility = useMemo(
+    () => buildEffectiveEligibility(eligibility, holderReq, holderCheck),
+    [eligibility, holderReq, holderCheck],
+  );
 
   // Subscribe to the bounty's broadcast channel so any slot / counter
   // change (this hunter failing, somebody else verifying, the cron
@@ -245,20 +262,30 @@ export function BountyDetailClient({
           <Section
             title="Who can hunt this?"
             caption={
-              eligibility.requirements.length === 0
+              effectiveEligibility.requirements.length === 0
                 ? "No filters — anyone with an X account can hunt this bounty."
                 : undefined
             }
           >
-            {eligibility.requirements.length === 0 ? (
+            {effectiveEligibility.requirements.length === 0 ? (
               <p className="rounded-[var(--radius-card)] border border-dashed border-border-default px-4 py-3 text-small text-text-tertiary">
                 Open to everyone.
               </p>
             ) : (
-              <EligibilityBanner
-                eligibility={eligibility}
-                variant="detail"
-              />
+              <div className="space-y-3">
+                <EligibilityBanner
+                  eligibility={effectiveEligibility}
+                  variant="detail"
+                />
+                {holderReq && (
+                  <HolderActionRow
+                    requirement={holderReq}
+                    state={holderCheck}
+                    isConnected={isConnected}
+                    openConnectModal={openConnectModal}
+                  />
+                )}
+              </div>
             )}
           </Section>
 
@@ -318,7 +345,7 @@ export function BountyDetailClient({
           bounty={bounty}
           claim={hunt.claim ?? claim}
           uiState={uiState}
-          eligibility={eligibility}
+          eligibility={effectiveEligibility}
           actionMessage={actionMessage}
           onPrimary={handlePrimary}
           claimingReward={claimingReward}
@@ -817,6 +844,167 @@ function PrimaryClaimCta({
       onClick={() => onPrimary(cta)}
     />
   );
+}
+
+/* =========================================================================
+   Holder-check eligibility helpers
+   ========================================================================= */
+
+type HolderReq = NonNullable<
+  Props["bounty"]["eligibilityFilters"]["holderRequirement"]
+>;
+type HolderState = ReturnType<typeof useHolderCheck>;
+
+const holderNumFmt = new Intl.NumberFormat("en-US");
+
+function buildEffectiveEligibility(
+  base: EligibilityResult,
+  requirement: HolderReq | null,
+  check: HolderState,
+): EligibilityResult {
+  if (!requirement) return base;
+
+  const requiredLabel = `Hold ${holderNumFmt.format(requirement.minAmount)}+ ${requirement.symbol}`;
+
+  let row: EligibilityRequirement;
+  switch (check.status) {
+    case "needs_wallet":
+      row = {
+        key: "holder_token",
+        label: "Wallet holdings",
+        requiredLabel,
+        actualLabel: "connect wallet to check",
+        met: false,
+        deferred: true,
+      };
+      break;
+    case "checking":
+      row = {
+        key: "holder_token",
+        label: "Wallet holdings",
+        requiredLabel,
+        actualLabel: "checking…",
+        met: false,
+        deferred: true,
+      };
+      break;
+    case "met":
+      row = {
+        key: "holder_token",
+        label: "Wallet holdings",
+        requiredLabel,
+        actualLabel: "balance OK",
+        met: true,
+      };
+      break;
+    case "unmet":
+      row = {
+        key: "holder_token",
+        label: "Wallet holdings",
+        requiredLabel,
+        actualLabel: `wallet doesn't hold enough ${requirement.symbol}`,
+        met: false,
+      };
+      break;
+    case "error":
+      row = {
+        key: "holder_token",
+        label: "Wallet holdings",
+        requiredLabel,
+        actualLabel: "couldn't check — we'll retry on hunt",
+        met: true,
+        deferred: true,
+      };
+      break;
+    case "no_requirement":
+    default:
+      return base;
+  }
+
+  // Replace the server-emitted deferred placeholder, or append if the
+  // server build is older than the client (defensive).
+  const requirements = base.requirements.some((r) => r.key === "holder_token")
+    ? base.requirements.map((r) => (r.key === "holder_token" ? row : r))
+    : [...base.requirements, row];
+
+  const unmet = requirements.filter((r) => !r.met);
+  const eligible = unmet.length === 0;
+  const summary = eligible
+    ? ""
+    : check.status === "needs_wallet"
+      ? "Connect a wallet to verify eligibility"
+      : check.status === "unmet"
+        ? `You need ${holderNumFmt.format(requirement.minAmount)}+ ${requirement.symbol} in your wallet`
+        : base.summary || "Missing requirements";
+
+  return { eligible, requirements, summary };
+}
+
+function HolderActionRow({
+  requirement,
+  state,
+  isConnected,
+  openConnectModal,
+}: {
+  requirement: HolderReq;
+  state: HolderState;
+  isConnected: boolean;
+  openConnectModal: () => void;
+}) {
+  if (state.status === "no_requirement") return null;
+  if (state.status === "met") return null;
+
+  if (state.status === "needs_wallet" || !isConnected) {
+    return (
+      <button
+        type="button"
+        onClick={openConnectModal}
+        className="press inline-flex h-11 w-full items-center justify-center gap-2 rounded-[10px] border border-accent-primary/30 bg-accent-soft px-4 text-small font-medium text-accent-text hover:bg-accent-soft/80"
+      >
+        <Wallet className="size-4" strokeWidth={2.25} />
+        Connect wallet to verify holdings
+      </button>
+    );
+  }
+
+  if (state.status === "checking") {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border-subtle bg-bg-elevated px-4 py-2.5 text-caption text-text-tertiary">
+        <span className="inline-block size-3 animate-pulse rounded-full bg-text-tertiary" />
+        Checking your {requirement.symbol} balance…
+      </div>
+    );
+  }
+
+  if (state.status === "unmet") {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-warning/30 bg-warning-soft px-4 py-2.5 text-small">
+        <span className="text-warning">
+          Your wallet doesn&rsquo;t hold {requirement.minAmount}{" "}
+          {requirement.symbol}+. Top up or switch wallets.
+        </span>
+        <button
+          type="button"
+          onClick={openConnectModal}
+          className="press inline-flex items-center gap-1.5 text-caption font-medium text-text-primary underline-offset-4 hover:underline"
+        >
+          <Wallet className="size-3.5" strokeWidth={2.25} />
+          Switch wallet
+        </button>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p className="rounded-[10px] border border-border-subtle bg-bg-elevated px-4 py-2.5 text-caption text-text-tertiary">
+        Couldn&rsquo;t check your {requirement.symbol} balance right now —
+        we&rsquo;ll retry when you click Hunt.
+      </p>
+    );
+  }
+
+  return null;
 }
 
 function FinalCheckCountdown({ target }: { target: Date | string }) {
