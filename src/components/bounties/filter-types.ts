@@ -15,6 +15,12 @@ export type DiscoverFilters = {
   rewardTokens: string[];
   minRewardPerHunterUsd: number;
   showIneligible: boolean;
+  /** Filled non-lottery bounties are hidden from the feed by default —
+   *  they can't accept new hunters until endsAt rolls around. Toggle
+   *  this on to see them anyway (useful for browsing what people are
+   *  posting). Doesn't affect pool_lottery, which never short-circuits
+   *  on slot capacity. */
+  showFilled: boolean;
   sortBy: BountySortBy;
   endingWithinHours?: number;
   searchQuery?: string;
@@ -30,6 +36,7 @@ export const DEFAULT_FILTERS: DiscoverFilters = {
   // hunter every live bounty than hide ones they happen to not
   // qualify for. Users can toggle off to narrow the feed.
   showIneligible: true,
+  showFilled: false,
   sortBy: "newest",
   preset: "all",
 };

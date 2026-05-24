@@ -161,6 +161,7 @@ function stableFilters(filters: BountyFilters): string {
   return JSON.stringify({
     sortBy: filters.sortBy,
     showIneligible: filters.showIneligible ? "true" : undefined,
+    showFilled: filters.showFilled ? "true" : undefined,
     rewardTokens: filters.rewardTokens?.length
       ? filters.rewardTokens.join(",")
       : undefined,

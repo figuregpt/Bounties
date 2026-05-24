@@ -52,6 +52,10 @@ const QuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  showFilled: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
   rewardTokens: z
     .string()
     .optional()
@@ -95,6 +99,7 @@ export async function GET(req: NextRequest) {
     {
       sortBy: q.sortBy,
       showIneligible: q.showIneligible,
+      showFilled: q.showFilled,
       rewardTokens: q.rewardTokens,
       // The "discover" feed honors whatever the user toggled — usually
       // "active" only, but they can swap to "completed" to browse the

@@ -131,6 +131,14 @@ export function FilterSidebar({ filters, onChange }: Props) {
           hint="Show bounties you don't qualify for"
         />
       </Group>
+
+      <Group label="Show filled">
+        <SwitchRow
+          checked={filters.showFilled}
+          onChange={(v) => onChange({ ...filters, showFilled: v })}
+          hint="Include bounties whose slots are already full"
+        />
+      </Group>
     </aside>
   );
 }
@@ -209,6 +217,7 @@ function isDefaultFilters(f: DiscoverFilters): boolean {
     f.rewardTokens.length === 0 &&
     f.minRewardPerHunterUsd === 0 &&
     f.showIneligible === DEFAULT_FILTERS.showIneligible &&
+    f.showFilled === DEFAULT_FILTERS.showFilled &&
     f.sortBy === "newest"
   );
 }

@@ -91,6 +91,7 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
     if (filters.rewardTokens.length > 0) n += 1;
     if (filters.minRewardPerHunterUsd > 0) n += 1;
     if (filters.showIneligible !== DEFAULT_FILTERS.showIneligible) n += 1;
+    if (filters.showFilled !== DEFAULT_FILTERS.showFilled) n += 1;
     return n;
   }, [filters]);
 
@@ -113,6 +114,7 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
     () => ({
       sortBy: filters.sortBy,
       showIneligible: filters.showIneligible,
+      showFilled: filters.showFilled,
       rewardTokens:
         filters.rewardTokens.length > 0 ? filters.rewardTokens : undefined,
       status: filters.statuses.length > 0 ? filters.statuses : undefined,
