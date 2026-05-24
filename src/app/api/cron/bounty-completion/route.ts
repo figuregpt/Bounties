@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { and, eq, gte, lt, ne, or } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { bounties } from "@/lib/db/schema";
 import { verifyCronRequest } from "@/lib/cron/auth";
@@ -36,13 +36,12 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const now = new Date();
 
-  // Pick up active bounties that are either past their endsAt OR
-  // already filled to capacity. Filled bounties shouldn't keep
-  // showing "LIVE" — there's nothing more to do, so we run the
-  // same finalization flow and flip them to `completed` early.
-  // pool_lottery never short-circuits on capacity because lottery
-  // bounties accept participants past `maxHunters` and only draw
-  // winners at endsAt.
+  // Finalize bounties whose `endsAt` has passed. We don't fast-track
+  // filled-but-not-expired bounties here — hunters need to keep their
+  // X actions live for the full bounty duration; final verification
+  // must run when the clock says so, not when the slot pool fills.
+  // Filled bounties are hidden from /discover at the query layer so
+  // they don't look "live" to new hunters while they wait.
   const ended = await db
     .select({
       id: bounties.id,
@@ -50,18 +49,7 @@ export async function POST(req: NextRequest) {
       creatorUserId: bounties.creatorUserId,
     })
     .from(bounties)
-    .where(
-      and(
-        eq(bounties.status, "active"),
-        or(
-          lt(bounties.endsAt, now),
-          and(
-            ne(bounties.distributionModel, "pool_lottery"),
-            gte(bounties.currentHuntersCount, bounties.maxHunters),
-          ),
-        ),
-      ),
-    )
+    .where(and(eq(bounties.status, "active"), lt(bounties.endsAt, now)))
     .limit(BATCH);
 
   const summary: Array<{

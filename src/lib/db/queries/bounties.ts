@@ -304,6 +304,30 @@ function buildWhere(filters: BountyFilters): SQL | undefined {
   conds.push(eq(bounties.isHidden, false));
   if (statusList.every((s) => s === "active")) {
     conds.push(gt(bounties.endsAt, new Date()));
+    // Filled non-lottery bounties stay `active` in the DB until their
+    // endsAt rolls around (final verification + refund must happen on
+    // the original clock so hunters can't claim & immediately delete
+    // their actions). But they shouldn't sit in Discover advertising
+    // a slot pool that's already full — hide them at the query layer.
+    // Lottery bounties accept participants past maxHunters by design,
+    // so we never short-circuit those.
+    //
+    // We compare against the live verified-claim count, not the
+    // denormalized counter, so a stale `current_hunters_count` row
+    // doesn't keep a filled bounty visible.
+    conds.push(
+      sql`(
+        ${bounties.distributionModel} = 'pool_lottery'
+        OR (
+          SELECT COUNT(*)::int FROM ${claims}
+          WHERE ${claims.bountyId} = ${bounties.id}
+            AND ${claims.status} IN (${sql.join(
+              VERIFIED_OR_BETTER_STATUSES.map((s) => sql`${s}`),
+              sql`, `,
+            )})
+        ) < ${bounties.maxHunters}
+      )`,
+    );
   }
 
   if (filters.rewardTokens && filters.rewardTokens.length > 0) {
