@@ -144,10 +144,19 @@ export async function announceBountyLaunched(
     ...(input.tokenLogoUrl ? { thumbnail: { url: input.tokenLogoUrl } } : {}),
   };
 
+  // Optional role ping. Discord renders <@&ROLE_ID> as a clickable
+  // role mention; we have to allow-list the role id explicitly via
+  // allowed_mentions so other random IDs in the content can't be
+  // weaponized into @everyone-style noise.
+  const roleId = process.env.DISCORD_BOUNTY_PING_ROLE_ID?.trim();
+  const rolePrefix = roleId ? `<@&${roleId}> ` : "";
+
   const body = JSON.stringify({
-    content: `New bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
+    content: `${rolePrefix}New bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
     embeds: [embed],
-    allowed_mentions: { parse: [] },
+    allowed_mentions: roleId
+      ? { parse: [], roles: [roleId] }
+      : { parse: [] },
   });
 
   try {
