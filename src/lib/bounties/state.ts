@@ -130,7 +130,14 @@ export function getBountyUIState(args: {
       message: "The window for this bounty has closed.",
     });
   }
-  if (bounty.currentHuntersCount >= bounty.maxHunters && !claim) {
+  // Lottery bounties have no slot cap — `maxHunters` there is the
+  // number of WINNERS drawn at endsAt, not a ceiling on participants.
+  // Only apply the "full" gate to fixed-slot / quadratic / tiered.
+  if (
+    bounty.distributionModel !== "pool_lottery" &&
+    bounty.currentHuntersCount >= bounty.maxHunters &&
+    !claim
+  ) {
     return statelessGate({
       kind: "campaign_full",
       title: "Bounty full",
