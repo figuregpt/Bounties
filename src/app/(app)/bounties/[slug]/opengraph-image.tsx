@@ -67,6 +67,16 @@ export default async function BountyOgImage({
   const creator = bounty.creator.handle;
   const slotsClaimed = bounty.currentHuntersCount ?? 0;
   const maxSlots = bounty.maxHunters;
+  const isLottery = bounty.distributionModel === "pool_lottery";
+  // Lottery reframing: maxHunters is the WINNER count, not a slot
+  // cap; joined count is unlimited. Saying "2/5 claimed" on a
+  // lottery card misrepresents the format.
+  const subline = isLottery
+    ? `per winner · ${maxSlots} random winners`
+    : `per hunter · ${maxSlots} slots`;
+  const metaRight = isLottery
+    ? `${slotsClaimed} joined · random draw at end`
+    : `${slotsClaimed}/${maxSlots} claimed`;
 
   return new ImageResponse(
     (
@@ -131,7 +141,7 @@ export default async function BountyOgImage({
                 {`${reward} ${symbol}`}
               </div>
               <div style={{ fontSize: 32, color: "#9B9BA5" }}>
-                {`per hunter · ${maxSlots} slots`}
+                {subline}
               </div>
             </div>
           </div>
@@ -149,9 +159,7 @@ export default async function BountyOgImage({
               {`by @${truncateHandle(creator)}`}
             </span>
             <span style={{ color: "#3F3F4A" }}>·</span>
-            <span style={{ color: "#7BC768" }}>
-              {`${slotsClaimed}/${maxSlots} claimed`}
-            </span>
+            <span style={{ color: "#7BC768" }}>{metaRight}</span>
           </div>
         </div>
 

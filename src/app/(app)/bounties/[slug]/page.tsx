@@ -30,7 +30,13 @@ export async function generateMetadata({
   const creator = bounty.creator.handle;
   const reward = `${formatTokenAmount(bounty.rewardPerHunter)} ${bounty.rewardTokenSymbol}`;
   const title = `${reward} · @${creator}`;
-  const description = `${bounty.maxHunters} slots · ${bounty.currentHuntersCount} claimed. Reply, retweet, or follow to hunt this bounty on Solana.`;
+  // Lottery bounties accept unlimited participants — "5 slots · 2
+  // claimed" reads as a half-full pool, which it isn't. Re-frame
+  // around winners + joined count to match what's on the page.
+  const isLottery = bounty.distributionModel === "pool_lottery";
+  const description = isLottery
+    ? `${bounty.maxHunters} random winners · ${bounty.currentHuntersCount} joined. Reply, retweet, or follow to enter this bounty on Solana.`
+    : `${bounty.maxHunters} slots · ${bounty.currentHuntersCount} claimed. Reply, retweet, or follow to hunt this bounty on Solana.`;
   const url = `/bounties/${slug}`;
 
   return {
