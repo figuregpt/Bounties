@@ -19,6 +19,7 @@ import {
 import { serializeZodIssues } from "@/lib/validation/field-labels";
 import { getTokenInfo } from "@/lib/db/queries/tokens";
 import { recordActivity } from "@/lib/realtime/activity";
+import { announceBountyLaunched } from "@/lib/discord/webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -258,6 +259,39 @@ export async function POST(
     type: "bounty_created",
     actorUserId: bounty.creatorUserId,
     bountyId: bounty.id,
+  });
+
+  // Discord webhook announcement. Fire-and-forget — a missing webhook
+  // env, network blip, or 4xx from Discord must never break activation.
+  // We pass the freshly-activated bounty (`activated`) so endsAt reflects
+  // the launch-time clock, not the draft placeholder.
+  void announceBountyLaunched({
+    slug: activated.slug,
+    rewardTokenSymbol: activated.rewardTokenSymbol,
+    rewardPerHunter: activated.rewardPerHunter,
+    rewardPerHunterUsd: activated.rewardPerHunterUsd,
+    totalPool: activated.totalPool,
+    totalPoolUsd: activated.totalPoolUsd,
+    maxHunters: activated.maxHunters,
+    distributionModel: activated.distributionModel,
+    endsAt: activated.endsAt,
+    tweetUrl: activated.tweetUrl,
+    tweetAuthorHandle: activated.tweetAuthorHandle,
+    tweetText:
+      typeof activated.tweetCachedData === "object" &&
+      activated.tweetCachedData !== null &&
+      "text" in activated.tweetCachedData
+        ? String(
+            (activated.tweetCachedData as { text?: unknown }).text ?? "",
+          )
+        : null,
+    eligibilityFilters: activated.eligibilityFilters,
+    creator: {
+      handle: user.handle,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+    },
+    tokenLogoUrl: tokenInfo?.logoUrl ?? null,
   });
 
   return NextResponse.json({
