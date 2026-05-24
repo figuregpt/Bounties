@@ -36,6 +36,7 @@ import type {
   BountySortBy,
 } from "@/lib/db/queries/bounties";
 import type { LiveActivityRow } from "@/lib/db/queries/activities";
+import { DiscordCtaCard } from "@/components/shared/discord-cta-card";
 import { LiveActivityPanel } from "@/components/shared/live-activity-panel";
 import { formatInt, formatUsd } from "@/lib/format";
 import type { User } from "@/types/database";
@@ -149,6 +150,9 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
     <div className="space-y-6">
       {/* ─── Platform row ──────────────────────────────────────────── */}
       <PlatformRow />
+
+      {/* ─── Discord CTA (dismissible) ─────────────────────────────── */}
+      <DiscordCtaCard />
 
       {/* ─── Header ────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
