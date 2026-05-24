@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -86,47 +86,103 @@ export function HuntOverlay({
     reset,
   } = hunt;
 
-  // When the parent opens us without a claim yet, kick off creation.
+  // Auto-start the claim creation exactly once per open. We can't gate
+  // this on `phase === "idle"` because a failed start() drops phase back
+  // to idle, which would re-trigger the effect and put us in an infinite
+  // retry loop ("Reserving your slot…" forever). Track a ref instead.
+  const autoStartedRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    if (!claim && !busy && phase === "idle") {
-      void start(connectedWallet);
+    if (!open) {
+      autoStartedRef.current = false;
+      return;
     }
-  }, [open, claim, busy, phase, start, connectedWallet]);
+    if (autoStartedRef.current) return;
+    if (claim || busy) return;
+    autoStartedRef.current = true;
+    void start(connectedWallet);
+  }, [open, claim, busy, start, connectedWallet]);
 
   // Re-arm error/verification surfaces when closing.
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
 
+  // Slot reservation failed (claim is null, we have an error, and we're
+  // not currently retrying). The legacy body would mislead the user into
+  // thinking they should complete tasks on X. Render a dedicated error
+  // panel instead, with a single "Try again" CTA that re-runs start().
+  const startFailed = !claim && !busy && !!error;
+
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent hideClose={phase === "verifying"}>
-        <Header phase={phase} hasSystemError={hasSystemError} />
-        <Body
-          phase={phase}
-          actionConfig={bounty.actionConfig}
-          claim={claim}
-          verification={verification}
-          error={error}
+        <Header
+          phase={startFailed ? "failure" : phase}
           hasSystemError={hasSystemError}
-          attempts={attempts}
-          isExhausted={isExhausted}
-          rewardLabel={rewardLabel(bounty)}
         />
-        <Footer
-          phase={phase}
-          tweetUrl={bounty.tweetUrl}
-          busy={busy}
-          isExhausted={isExhausted}
-          retryAvailableAt={retryAvailableAt}
-          attempts={attempts}
-          onVerify={verify}
-          onRetry={verify}
-          onClose={() => onOpenChange(false)}
-        />
+        {startFailed ? (
+          <StartErrorBody error={error!} />
+        ) : (
+          <Body
+            phase={phase}
+            actionConfig={bounty.actionConfig}
+            claim={claim}
+            verification={verification}
+            error={error}
+            hasSystemError={hasSystemError}
+            attempts={attempts}
+            isExhausted={isExhausted}
+            rewardLabel={rewardLabel(bounty)}
+          />
+        )}
+        {startFailed ? (
+          <ModalFooter>
+            <SecondaryButton onClick={() => onOpenChange(false)}>
+              Close
+            </SecondaryButton>
+            <PrimaryButton
+              onClick={() => {
+                autoStartedRef.current = true;
+                void start(connectedWallet);
+              }}
+              loading={busy}
+              icon={<RefreshCw className="size-4" strokeWidth={2.25} />}
+            >
+              Try again
+            </PrimaryButton>
+          </ModalFooter>
+        ) : (
+          <Footer
+            phase={phase}
+            tweetUrl={bounty.tweetUrl}
+            busy={busy}
+            isExhausted={isExhausted}
+            retryAvailableAt={retryAvailableAt}
+            attempts={attempts}
+            onVerify={verify}
+            onRetry={verify}
+            onClose={() => onOpenChange(false)}
+          />
+        )}
       </ModalContent>
     </Modal>
+  );
+}
+
+function StartErrorBody({ error }: { error: string }) {
+  return (
+    <>
+      <ModalDescription>
+        <span className="text-text-primary">
+          Couldn&rsquo;t reserve your slot.
+        </span>
+      </ModalDescription>
+      <ModalBody>
+        <p className="rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2 text-small text-danger">
+          {error}
+        </p>
+      </ModalBody>
+    </>
   );
 }
 
