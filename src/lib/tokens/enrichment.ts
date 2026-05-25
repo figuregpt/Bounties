@@ -146,12 +146,37 @@ export async function enrichToken(
     // can fetch from CoinGecko (DexScreener returns garbage for WSOL
     // because it's the quote side of most pairs); BNTY has no market
     // yet so it stays 0 until the token launches.
-    const fetched =
-      canonical.priceUsd > 0
-        ? canonical.priceUsd
-        : canonical.symbol === "SOL"
-          ? await fetchSolPriceUsd()
-          : 0;
+    //
+    // CRITICAL: CoinGecko's free endpoint rate-limits aggressively
+    // (10–30 req/min, then 429). The /create form already enriches SOL
+    // once when the chip is picked; if we re-fetch on every subsequent
+    // call (e.g. when /api/bounties launches a draft), the second
+    // fetch eats a 429 and priceUsd drops to 0 — server-side reward
+    // validation then fails with "currently ≈ $0.00" even though the
+    // chip says $85.95. Re-use the cached value when it's fresh.
+    let fetched: number;
+    if (canonical.priceUsd > 0) {
+      fetched = canonical.priceUsd;
+    } else if (canonical.symbol === "SOL") {
+      const cached = existing?.jupiterPriceUsd
+        ? Number(existing.jupiterPriceUsd)
+        : 0;
+      const cachedFresh =
+        existing?.jupiterPriceUpdatedAt &&
+        Date.now() - existing.jupiterPriceUpdatedAt.getTime() <
+          CACHE_FRESHNESS_MS;
+      if (cached > 0 && cachedFresh && !opts.forceRefresh) {
+        fetched = cached;
+      } else {
+        const live = await fetchSolPriceUsd();
+        // If CoinGecko 429s and we have a stale cached price, prefer
+        // the stale value over zeroing out — better to be a few
+        // minutes off than to brick the launch validation.
+        fetched = live > 0 ? live : cached;
+      }
+    } else {
+      fetched = 0;
+    }
     const now = new Date();
     const upserted = await db
       .insert(tokens)

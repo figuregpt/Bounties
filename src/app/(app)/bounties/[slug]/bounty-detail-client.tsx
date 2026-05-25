@@ -339,6 +339,7 @@ export function BountyDetailClient({
             onToggle={() => setHuntersOpen((v) => !v)}
             hunters={hunters}
             tokenLogoUrl={tokenInfo?.logoUrl ?? null}
+            isLottery={bounty.distributionModel === "pool_lottery"}
           />
 
           <MetadataSection bounty={bounty} />
@@ -471,13 +472,35 @@ function HunterSection({
   onToggle,
   hunters,
   tokenLogoUrl,
+  isLottery,
 }: {
   count: number;
   open: boolean;
   onToggle: () => void;
   hunters: HunterRow[];
   tokenLogoUrl: string | null;
+  isLottery: boolean;
 }) {
+  // For lottery, split rows into winners (verified / claimed_reward),
+  // not-picked (failed/not_selected_lottery), and other (in-progress /
+  // withdraw failures). Rendering them in three labelled groups makes
+  // the draw outcome obvious at a glance and answers the "who won?"
+  // question that's otherwise buried at the top of a flat list.
+  const winners = isLottery
+    ? hunters.filter(
+        (h) => h.status === "verified" || h.status === "claimed_reward",
+      )
+    : [];
+  const notPicked = isLottery
+    ? hunters.filter(
+        (h) =>
+          h.status === "failed" && h.failureCategory === "not_selected_lottery",
+      )
+    : [];
+  const everyoneElse = isLottery
+    ? hunters.filter((h) => !winners.includes(h) && !notPicked.includes(h))
+    : hunters;
+
   return (
     <section className="space-y-4" data-hunters-section>
       <button
@@ -486,9 +509,13 @@ function HunterSection({
         className="flex w-full items-center justify-between gap-3 text-left"
       >
         <div>
-          <h2 className="text-h2">Recent hunters · {count}</h2>
+          <h2 className="text-h2">
+            {isLottery ? "Participants" : "Recent hunters"} · {count}
+          </h2>
           <p className="text-small text-text-secondary">
-            People who&rsquo;ve claimed against this bounty.
+            {isLottery
+              ? "Hunters who joined this lottery, grouped by outcome."
+              : "People who've claimed against this bounty."}
           </p>
         </div>
         <ChevronDown
@@ -500,11 +527,60 @@ function HunterSection({
         />
       </button>
       {open && (
-        <HunterList
-          hunters={hunters}
-          emptyHint="Be the first hunter on this bounty."
-          tokenLogoUrl={tokenLogoUrl}
-        />
+        <div className="space-y-5">
+          {isLottery && winners.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-caption uppercase tracking-wider text-text-tertiary">
+                Winners · {winners.length}
+              </h3>
+              <HunterList
+                hunters={winners}
+                emptyHint="No winners drawn yet."
+                tokenLogoUrl={tokenLogoUrl}
+                isLottery
+              />
+            </div>
+          )}
+          {isLottery && notPicked.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-caption uppercase tracking-wider text-text-tertiary">
+                Not picked · {notPicked.length}
+              </h3>
+              <HunterList
+                hunters={notPicked}
+                emptyHint="No losers."
+                tokenLogoUrl={tokenLogoUrl}
+                isLottery
+              />
+            </div>
+          )}
+          {everyoneElse.length > 0 && (
+            <div className="space-y-2">
+              {isLottery && (
+                <h3 className="text-caption uppercase tracking-wider text-text-tertiary">
+                  In progress · {everyoneElse.length}
+                </h3>
+              )}
+              <HunterList
+                hunters={everyoneElse}
+                emptyHint="Be the first hunter on this bounty."
+                tokenLogoUrl={tokenLogoUrl}
+                isLottery={isLottery}
+              />
+            </div>
+          )}
+          {isLottery &&
+            winners.length === 0 &&
+            notPicked.length === 0 &&
+            everyoneElse.length === 0 && (
+              <HunterList
+                hunters={[]}
+                emptyHint="Be the first to enter this lottery."
+                tokenLogoUrl={tokenLogoUrl}
+                isLottery
+              />
+            )}
+        </div>
       )}
     </section>
   );

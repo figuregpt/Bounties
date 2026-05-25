@@ -32,6 +32,10 @@ export async function getClaimForBountyAndUser(
 export type HunterRow = {
   id: string;
   status: ClaimStatus;
+  /** Why a `failed` claim failed. The bounty detail UI uses this to
+   *  draw lottery losers (`not_selected_lottery`) as a distinct
+   *  "didn't get drawn" pill instead of the red "Failed" pill. */
+  failureCategory: string | null;
   createdAt: Date;
   claimedAt: Date | null;
   finalVerifiedAt: Date | null;
@@ -66,6 +70,7 @@ export async function getBountyHunters(
     .select({
       id: claims.id,
       status: claims.status,
+      failureCategory: claims.failureCategory,
       createdAt: claims.createdAt,
       claimedAt: claims.claimedAt,
       finalVerifiedAt: claims.finalVerifiedAt,

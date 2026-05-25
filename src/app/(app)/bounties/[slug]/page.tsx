@@ -80,9 +80,17 @@ export default async function BountyPage({
   // Fire-and-forget view counter — never block the render path on it.
   void incrementBountyView(bounty.id).catch(() => {});
 
+  // Lottery pages need a higher cap because we group rows into
+  // Winners / Not picked / In progress — capping at 20 would hide
+  // most of the losers and make the draw look smaller than it was.
+  // For a 5-winner / 200-entrant draw the user wants to see both
+  // sides; the section is collapsible so the larger DOM only renders
+  // on demand.
+  const huntersLimit =
+    bounty.distributionModel === "pool_lottery" ? 500 : 20;
   const [claim, hunters, tokenInfo] = await Promise.all([
     user ? getClaimForBountyAndUser(bounty.id, user.id) : Promise.resolve(null),
-    getBountyHunters(bounty.id, { limit: 20 }),
+    getBountyHunters(bounty.id, { limit: huntersLimit }),
     getTokenInfo(bounty.rewardTokenMint),
   ]);
 

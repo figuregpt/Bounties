@@ -110,6 +110,7 @@ const HUNTERS: HunterRow[] = [
     finalVerifiedAt: new Date(Date.now() - 1000 * 60 * 7),
     rewardAmount: "250",
     rewardTokenSymbol: "BNTY",
+    failureCategory: null,
     hunter: {
       id: "h-1",
       handle: "0xyigo",
@@ -126,6 +127,7 @@ const HUNTERS: HunterRow[] = [
     finalVerifiedAt: new Date(Date.now() - 1000 * 60),
     rewardAmount: "250",
     rewardTokenSymbol: "BNTY",
+    failureCategory: null,
     hunter: {
       id: "h-2",
       handle: "figuregpt",
@@ -142,6 +144,7 @@ const HUNTERS: HunterRow[] = [
     finalVerifiedAt: null,
     rewardAmount: "250",
     rewardTokenSymbol: "BNTY",
+    failureCategory: null,
     hunter: {
       id: "h-3",
       handle: "hunter_2",
@@ -158,6 +161,7 @@ const HUNTERS: HunterRow[] = [
     finalVerifiedAt: null,
     rewardAmount: "250",
     rewardTokenSymbol: "BNTY",
+    failureCategory: null,
     hunter: {
       id: "h-4",
       handle: "hunter_4",

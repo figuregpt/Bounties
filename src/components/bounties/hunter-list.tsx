@@ -17,6 +17,7 @@ export function HunterList({
   hunters,
   emptyHint,
   tokenLogoUrl,
+  isLottery = false,
 }: {
   hunters: HunterRow[];
   /** Override the empty-state copy (the detail page swaps it for
@@ -25,6 +26,9 @@ export function HunterList({
   /** Reward-token logo applied to every row's chip. Looked up once at
    *  the page level so we don't JOIN tokens per claim row. */
   tokenLogoUrl?: string | null;
+  /** Lottery bounties swap "Verified" / "Claimed" labels for
+   *  "Winner" / "Won" so the draw outcome is obvious from the row. */
+  isLottery?: boolean;
 }) {
   if (hunters.length === 0) {
     return (
@@ -63,7 +67,7 @@ export function HunterList({
               </p>
             </div>
 
-            <StatusBadge status={h.status} />
+            <StatusBadge row={h} isLottery={isLottery} />
 
             <TokenChip
               size="sm"
@@ -78,8 +82,14 @@ export function HunterList({
   );
 }
 
-function StatusBadge({ status }: { status: HunterRow["status"] }) {
-  const tone = toneFor(status);
+function StatusBadge({
+  row,
+  isLottery,
+}: {
+  row: HunterRow;
+  isLottery: boolean;
+}) {
+  const tone = toneFor(row, isLottery);
   return (
     <span
       className={cn(
@@ -93,23 +103,39 @@ function StatusBadge({ status }: { status: HunterRow["status"] }) {
   );
 }
 
-function toneFor(status: HunterRow["status"]): {
+function toneFor(
+  row: HunterRow,
+  isLottery: boolean,
+): {
   label: string;
   bg: string;
   text: string;
 } {
-  switch (status) {
+  // Lottery losers come back as status=failed with a dedicated
+  // category — treat them as a neutral "didn't get drawn" instead of
+  // the warning-tone "Failed" pill that withdraw-action failures get.
+  if (
+    row.status === "failed" &&
+    row.failureCategory === "not_selected_lottery"
+  ) {
+    return {
+      label: "Not picked",
+      bg: "bg-bg-elevated",
+      text: "text-text-tertiary",
+    };
+  }
+  switch (row.status) {
     case "claimed_reward":
       return {
-        label: "Claimed",
+        label: isLottery ? "Won" : "Claimed",
         bg: "bg-success-soft",
         text: "text-success",
       };
     case "verified":
       return {
-        label: "Verified",
-        bg: "bg-accent-soft",
-        text: "text-accent-text",
+        label: isLottery ? "Winner" : "Verified",
+        bg: "bg-success-soft",
+        text: "text-success",
       };
     case "failed":
       return {
