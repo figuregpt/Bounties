@@ -68,11 +68,24 @@ export async function runFinalVerification(
   let newlyVerified = 0;
   let newlyFailed = 0;
 
+  // For lottery bounties we DON'T flip Layer-2-passing claims to
+  // `verified` during the per-claim loop — if we did, every passing
+  // entrant would briefly look like a winner (claim-ready) for the
+  // duration of the batch (minutes on a 150+ entrant bounty), and
+  // anyone with the profile page open would see a Claim button that
+  // can't actually fire. Instead we keep them in `initial_verified`
+  // until the lottery resolves at the bottom, then promote only the
+  // drawn winners atomically.
+  const isLottery = bounty.distributionModel === "pool_lottery";
+
   for (const claim of pending) {
     try {
-      const outcome = await finalVerifyClaim(claim, bounty);
+      const outcome = await finalVerifyClaim(claim, bounty, {
+        deferVerifyPromotion: isLottery,
+      });
       if (outcome === "verified") newlyVerified += 1;
       else if (outcome === "failed") newlyFailed += 1;
+      // outcome === "deferred" → Layer 2 passed but waiting on lottery
     } catch (err) {
       // Don't crash the whole batch on one bad claim — log + move on.
       console.error(
@@ -82,14 +95,10 @@ export async function runFinalVerification(
     }
   }
 
-  // Random-lottery payout selection. fixed_slot bounties pay every
-  // verified claim; pool_lottery picks `maxHunters` winners at random
-  // from the verified pool and demotes the rest to a terminal
-  // `failed` state with a dedicated category so the UI can show "you
-  // joined but weren't drawn" instead of "verification failed".
-  if (bounty.distributionModel === "pool_lottery") {
-    const losers = await drawLotteryLosers(bounty);
-    newlyFailed += losers;
+  if (isLottery) {
+    const outcome = await resolveLottery(bounty);
+    newlyVerified += outcome.winners;
+    newlyFailed += outcome.losers;
   }
 
   return {
@@ -100,48 +109,119 @@ export async function runFinalVerification(
   };
 }
 
-async function drawLotteryLosers(bounty: Bounty): Promise<number> {
+/**
+ * Lottery resolution. Runs AFTER Layer 2 has filtered out claims that
+ * withdrew their actions — those are already `failed/action_withdrawn`.
+ * Whatever remains in `initial_verified` is the eligible pool: hunters
+ * who joined and whose actions were still up at the deadline. We
+ * shuffle that pool with crypto-random and split into winners + losers.
+ *
+ * Winners → status='verified' + finalVerifiedAt + "your reward is
+ *           ready" notification + claim_verified event
+ * Losers  → status='failed', category='not_selected_lottery'
+ *
+ * Two important invariants:
+ *   1. The status transition only fires on rows still in
+ *      `initial_verified` — so a concurrent re-run can't double-pick
+ *      or accidentally demote a row that already resolved.
+ *   2. The losers' UPDATE runs in one shot; winners get individual
+ *      writes because the side-effect list per-winner (notification +
+ *      pubsub) doesn't compose into a single SQL.
+ */
+async function resolveLottery(
+  bounty: Bounty,
+): Promise<{ winners: number; losers: number }> {
   const db = getDb();
-  // Pull every `verified` claim for this bounty — those are eligible
-  // participants. Order is deterministic per-row but the picker uses
-  // crypto-random shuffling so two cron passes wouldn't pick the same
-  // set if a race somehow re-fired this. (Once a row is marked
-  // `failed` it's a terminal state and won't be re-eligible.)
+
   const eligible = await db
-    .select({ id: claims.id })
+    .select({ id: claims.id, hunterUserId: claims.hunterUserId })
     .from(claims)
     .where(
-      and(eq(claims.bountyId, bounty.id), eq(claims.status, "verified")),
-    );
-  if (eligible.length <= bounty.maxHunters) {
-    // Fewer (or exactly) participants than seats — everybody wins,
-    // no losers to draw.
-    return 0;
-  }
-  const shuffled = cryptoShuffle(eligible.map((r) => r.id));
-  const loserIds = shuffled.slice(bounty.maxHunters);
-
-  // Atomic demotion: only flip rows still in `verified`. If a hunter
-  // somehow grabbed `claiming` before this transition ran (shouldn't
-  // happen pre-completion, but defensive), they keep their win.
-  const updated = await db
-    .update(claims)
-    .set({
-      status: "failed",
-      failureCategory: "not_selected_lottery",
-      failureReason: "Bounty drew a random winner set; you weren't selected.",
-      failedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
       and(
-        inArray(claims.id, loserIds),
-        eq(claims.status, "verified"),
+        eq(claims.bountyId, bounty.id),
+        eq(claims.status, "initial_verified"),
       ),
-    )
-    .returning({ id: claims.id });
+    );
+  if (eligible.length === 0) return { winners: 0, losers: 0 };
 
-  return updated.length;
+  const shuffled = cryptoShuffle(
+    eligible.map((r) => ({ id: r.id, hunterUserId: r.hunterUserId })),
+  );
+  const winnerSlice = shuffled.slice(0, bounty.maxHunters);
+  const loserSlice = shuffled.slice(bounty.maxHunters);
+
+  const now = new Date();
+
+  /* ---- Winners: promote individually so we can fire per-row events */
+  let winnerCount = 0;
+  for (const w of winnerSlice) {
+    const updated = await db
+      .update(claims)
+      .set({
+        status: "verified",
+        finalVerifiedAt: now,
+        finalCheckAttemptedAt: now,
+        claimWindowEndsAt: null,
+        failureReason: null,
+        failureCategory: null,
+        updatedAt: now,
+      })
+      .where(
+        and(eq(claims.id, w.id), eq(claims.status, "initial_verified")),
+      )
+      .returning({ id: claims.id });
+    if (updated.length === 0) continue;
+    winnerCount += 1;
+
+    await db.insert(notifications).values({
+      userId: w.hunterUserId,
+      type: "claim_ready_to_claim",
+      title: "You won the bounty draw",
+      body: `Claim your reward — you were one of ${bounty.maxHunters} winners`,
+      linkUrl: `/bounties/${bounty.slug}`,
+      relatedBountyId: bounty.id,
+      relatedClaimId: w.id,
+    });
+    publishEvent(`user-${w.hunterUserId}`, "claim_verified", {
+      claimId: w.id,
+      bountyId: bounty.id,
+      status: "verified",
+    });
+    void recordActivity({
+      type: "claim_verified",
+      actorUserId: w.hunterUserId,
+      bountyId: bounty.id,
+      claimId: w.id,
+    });
+  }
+
+  /* ---- Losers: single batch UPDATE */
+  let loserCount = 0;
+  if (loserSlice.length > 0) {
+    const demoted = await db
+      .update(claims)
+      .set({
+        status: "failed",
+        failureCategory: "not_selected_lottery",
+        failureReason:
+          "Bounty drew a random winner set; you weren't selected.",
+        failedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          inArray(
+            claims.id,
+            loserSlice.map((l) => l.id),
+          ),
+          eq(claims.status, "initial_verified"),
+        ),
+      )
+      .returning({ id: claims.id });
+    loserCount = demoted.length;
+  }
+
+  return { winners: winnerCount, losers: loserCount };
 }
 
 /**
@@ -165,7 +245,16 @@ function cryptoShuffle<T>(input: readonly T[]): T[] {
 async function finalVerifyClaim(
   claim: Claim,
   bounty: Bounty,
-): Promise<"verified" | "failed" | "skipped"> {
+  opts?: {
+    /** Lottery mode. When true, a passing Layer 2 check does NOT
+     *  promote the claim to `verified` — the row stays in
+     *  `initial_verified` until `resolveLottery` runs at the end of
+     *  the cron batch and atomically picks the winners. This is the
+     *  only way to keep losers from briefly appearing claimable
+     *  while the per-claim loop is still working through the pool. */
+    deferVerifyPromotion?: boolean;
+  },
+): Promise<"verified" | "failed" | "skipped" | "deferred"> {
   const db = getDb();
 
   const [user] = await db
@@ -209,6 +298,20 @@ async function finalVerifyClaim(
   const now = new Date();
 
   if (result.allPassed) {
+    // Lottery mode: persist the patch (boolean flips, finalCheck
+    // timestamp) but don't promote to `verified` yet. The lottery
+    // resolver handles status + notification + events for winners.
+    if (opts?.deferVerifyPromotion) {
+      await db
+        .update(claims)
+        .set({
+          ...result.patch,
+          finalCheckAttemptedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(claims.id, claim.id));
+      return "deferred";
+    }
     await db
       .update(claims)
       .set({

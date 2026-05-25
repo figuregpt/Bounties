@@ -94,6 +94,7 @@ export async function POST(
       claim: claims,
       bountyTokenDecimals: bounties.rewardTokenDecimals,
       bountyStatus: bounties.status,
+      bountyDistributionModel: bounties.distributionModel,
     })
     .from(claims)
     .leftJoin(bounties, eq(bounties.id, claims.bountyId))
@@ -120,6 +121,31 @@ export async function POST(
         ok: false,
         error: `Bounty is ${row.bountyStatus}; rewards aren't payable`,
         errorCode: "bounty_unavailable",
+      },
+      { status: 409 },
+    );
+  }
+
+  // Lottery defense-in-depth. The completion cron promotes ALL
+  // Layer-2-passing claims to `verified` BEFORE drawing winners — so
+  // during that window (which can take minutes on a busy bounty) a
+  // lottery loser briefly appears claimable. The atomic
+  // verified→claiming UPDATE later already protects against this
+  // (their status is `failed` by the time we touch the DB), but
+  // refusing the request up-front avoids racing on a stale page state
+  // and gives the user a clean message instead of a wrong_state 409.
+  // Once bounty.status='completed', the draw has definitively
+  // resolved and remaining `verified` claims are real winners.
+  if (
+    row.bountyDistributionModel === "pool_lottery" &&
+    row.bountyStatus !== "completed"
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "The lottery hasn't drawn winners yet — check back once the bounty has closed.",
+        errorCode: "lottery_not_drawn",
       },
       { status: 409 },
     );
