@@ -79,6 +79,22 @@ export type VerifyFailureCode =
   | "amount_too_low"
   | "rpc_error";
 
+/**
+ * Fee transfers carry a USD-derived amount, so the client computes
+ * the lamport/raw amount using whatever priceUsd it cached when the
+ * tx was built. Between sign and server verify, the cached price can
+ * drift a fraction of a percent (CoinGecko refreshes, DexScreener
+ * tick, etc.) — that's enough to make a strict "≥ expected"
+ * comparison fail with the user's funds already on-chain. We accept
+ * down to 95% of the server-computed expectation; anything below is
+ * a real mispayment.
+ */
+const FEE_SLIPPAGE_BPS = 500; // 5%
+
+function applyFeeSlippage(expected: bigint): bigint {
+  return (expected * BigInt(10_000 - FEE_SLIPPAGE_BPS)) / BigInt(10_000);
+}
+
 export async function verifyEscrowTx(
   args: VerifyEscrowArgs,
 ): Promise<VerifyEscrowResult> {
@@ -180,11 +196,12 @@ export async function verifyEscrowTx(
           reason: `Treasury transfer: ${treasuryLamports} lamports, expected ≥ ${args.expectedAmount}`,
         };
       }
-      if (feeLamports < args.expectedFee.amount) {
+      const feeFloor = applyFeeSlippage(args.expectedFee.amount);
+      if (feeLamports < feeFloor) {
         return {
           ok: false,
           code: "amount_too_low",
-          reason: `Revenue transfer: ${feeLamports} lamports, expected ≥ ${args.expectedFee.amount}`,
+          reason: `Revenue transfer underpaid: ${feeLamports} lamports, minimum ${feeFloor} (${FEE_SLIPPAGE_BPS / 100}% slippage of ${args.expectedFee.amount})`,
         };
       }
       return {
@@ -337,11 +354,12 @@ export async function verifyEscrowTx(
         reason: `Treasury transfer: ${toTreasury.rawAmount} raw units, expected ≥ ${args.expectedAmount}`,
       };
     }
-    if (toRevenue.rawAmount < args.expectedFee.amount) {
+    const feeFloor = applyFeeSlippage(args.expectedFee.amount);
+    if (toRevenue.rawAmount < feeFloor) {
       return {
         ok: false,
         code: "amount_too_low",
-        reason: `Revenue transfer: ${toRevenue.rawAmount} raw units, expected ≥ ${args.expectedFee.amount}`,
+        reason: `Revenue transfer underpaid: ${toRevenue.rawAmount} raw units, minimum ${feeFloor} (${FEE_SLIPPAGE_BPS / 100}% slippage of ${args.expectedFee.amount})`,
       };
     }
     return {

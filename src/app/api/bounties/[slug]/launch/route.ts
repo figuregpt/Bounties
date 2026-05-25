@@ -226,10 +226,23 @@ export async function POST(
           : undefined,
     });
     if (!result.ok) {
+      // amount_too_low usually means the token price moved between
+      // sign-and-server-verify (already-paid funds, useless lamport
+      // numbers in the message). Surface a copy that tells the
+      // creator their funds are safe and how to recover.
+      const userMessage =
+        result.code === "amount_too_low"
+          ? "On-chain transfer amount didn't match what we expected — usually a quick price move between signing and confirmation. Your funds are safe; please contact support with the bounty slug and we'll resolve it."
+          : result.reason;
+      // Stash the raw reason in server logs for debugging without
+      // leaking lamport noise to the user.
+      console.warn(
+        `[launch] verify failed for bounty=${bounty.slug} code=${result.code}: ${result.reason}`,
+      );
       return NextResponse.json(
         {
           ok: false,
-          error: result.reason,
+          error: userMessage,
           errorCode: result.code,
         },
         { status: 400 },
