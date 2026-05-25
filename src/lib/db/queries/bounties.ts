@@ -60,6 +60,33 @@ function inProgressClaimsCountSql() {
       )})
   )`;
 }
+
+/**
+ * For lottery bounties, counts every hunter who ever reached the pool
+ * — winners (still verified/claiming/claimed) PLUS people the random
+ * draw demoted to `failed/not_selected_lottery`. The verified-only
+ * count would erase 95% of the participants right after the draw and
+ * leave "8 joined" on a bounty that 152 people actually entered.
+ *
+ * Returns the same value as verifiedClaimsCountSql() for non-lottery
+ * bounties since `not_selected_lottery` is a lottery-only category.
+ */
+function lotteryJoinedCountSql() {
+  return sql<number>`(
+    SELECT COUNT(*)::int FROM ${claims}
+    WHERE ${claims.bountyId} = ${bounties.id}
+      AND (
+        ${claims.status} IN (${sql.join(
+          VERIFIED_OR_BETTER_STATUSES.map((s) => sql`${s}`),
+          sql`, `,
+        )})
+        OR (
+          ${claims.status} = 'failed'
+          AND ${claims.failureCategory} = 'not_selected_lottery'
+        )
+      )
+  )`;
+}
 import type {
   Bounty,
   BountyCategory,
@@ -131,6 +158,14 @@ export type BountyFeedItem = Bounty & {
   /** Number of claims still mid-flow (awaiting_action / action_claimed)
    *  — surfaced separately as "N hunting". */
   inProgressCount: number;
+  /** For lottery bounties only: total historical participant count,
+   *  including hunters who completed actions but lost the random
+   *  draw (status=failed, category=not_selected_lottery). The
+   *  detail panel uses this for the "X joined · Y winners" line so
+   *  completed lotteries don't read as "8 joined" when 152 people
+   *  actually entered. Equal to currentHuntersCount on non-lottery
+   *  bounties. */
+  lotteryJoinedCount: number;
   /** True only when the current user has a row in claims for this bounty. */
   claimedByCurrentUser: boolean;
 };
@@ -140,6 +175,8 @@ export type BountyDetail = Bounty & {
   /** Same live-computed semantics as `BountyFeedItem.currentHuntersCount`. */
   currentHuntersCount: number;
   inProgressCount: number;
+  /** See BountyFeedItem.lotteryJoinedCount. */
+  lotteryJoinedCount: number;
 };
 
 /* =========================================================================
@@ -208,6 +245,7 @@ export async function getActiveBounties(
       },
       computedCurrentHuntersCount: verifiedClaimsCountSql(),
       inProgressCount: inProgressClaimsCountSql(),
+      lotteryJoinedCount: lotteryJoinedCountSql(),
     })
     .from(bounties)
     .innerJoin(users, eq(bounties.creatorUserId, users.id))
@@ -231,6 +269,7 @@ export async function getActiveBounties(
       rewardToken,
       computedCurrentHuntersCount,
       inProgressCount,
+      lotteryJoinedCount,
     }) => ({
       ...bounty,
       // Shadow the denormalized counter with the live count over
@@ -238,6 +277,7 @@ export async function getActiveBounties(
       // the UI shows under "X of Y slots".
       currentHuntersCount: Number(computedCurrentHuntersCount ?? 0),
       inProgressCount: Number(inProgressCount ?? 0),
+      lotteryJoinedCount: Number(lotteryJoinedCount ?? 0),
       creator,
       rewardToken: rewardToken
         ? {
@@ -438,6 +478,7 @@ export async function getBountyById(
       },
       computedCurrentHuntersCount: verifiedClaimsCountSql(),
       inProgressCount: inProgressClaimsCountSql(),
+      lotteryJoinedCount: lotteryJoinedCountSql(),
     })
     .from(bounties)
     .innerJoin(users, eq(bounties.creatorUserId, users.id))
@@ -448,6 +489,7 @@ export async function getBountyById(
     ...row.bounty,
     currentHuntersCount: Number(row.computedCurrentHuntersCount ?? 0),
     inProgressCount: Number(row.inProgressCount ?? 0),
+    lotteryJoinedCount: Number(row.lotteryJoinedCount ?? 0),
     creator: row.creator,
   };
 }
@@ -469,6 +511,7 @@ export async function getBountyBySlug(
       },
       computedCurrentHuntersCount: verifiedClaimsCountSql(),
       inProgressCount: inProgressClaimsCountSql(),
+      lotteryJoinedCount: lotteryJoinedCountSql(),
     })
     .from(bounties)
     .innerJoin(users, eq(bounties.creatorUserId, users.id))
@@ -479,6 +522,7 @@ export async function getBountyBySlug(
     ...row.bounty,
     currentHuntersCount: Number(row.computedCurrentHuntersCount ?? 0),
     inProgressCount: Number(row.inProgressCount ?? 0),
+    lotteryJoinedCount: Number(row.lotteryJoinedCount ?? 0),
     creator: row.creator,
   };
 }

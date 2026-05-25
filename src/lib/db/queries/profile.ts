@@ -91,6 +91,11 @@ export type ProfileHistoryRow = {
   failedAt: Date | null;
   expiredAt: Date | null;
   failureReason: string | null;
+  /** When `status === "failed"`, this tells the UI WHY. Treated
+   *  specially for `not_selected_lottery` — those rows are "you
+   *  weren't picked", not "your actions failed", and shouldn't get
+   *  the alarming red "Failed" badge. */
+  failureCategory: string | null;
   claimTxHash: string | null;
   updatedAt: Date;
 };
@@ -214,6 +219,7 @@ export async function getProfileData(
       failedAt: claims.failedAt,
       expiredAt: claims.expiredAt,
       failureReason: claims.failureReason,
+      failureCategory: claims.failureCategory,
       claimTxHash: claims.claimTxHash,
       updatedAt: claims.updatedAt,
     })
@@ -301,6 +307,7 @@ export async function getProfileData(
       failedAt: r.failedAt,
       expiredAt: r.expiredAt,
       failureReason: r.failureReason,
+      failureCategory: r.failureCategory,
       claimTxHash: r.claimTxHash,
       updatedAt: r.updatedAt,
     })),

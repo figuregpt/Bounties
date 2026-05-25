@@ -70,6 +70,10 @@ type Props = {
      *  of the same name. */
     currentHuntersCount: number;
     inProgressCount: number;
+    /** Lottery-only: historical joined count including not-picked
+     *  losers, so a 152-entrant completed lottery doesn't read as
+     *  "8 joined" after the random draw demotes losers to `failed`. */
+    lotteryJoinedCount: number;
   };
   claim: Claim | null;
   eligibility: EligibilityResult;
@@ -664,7 +668,8 @@ function ActionPanel({
               <Users className="size-3" strokeWidth={2} />
               {isLottery ? (
                 <>
-                  {verified} joined · {bounty.maxHunters} winners
+                  {bounty.lotteryJoinedCount} joined ·{" "}
+                  {bounty.maxHunters} winners
                 </>
               ) : (
                 <>

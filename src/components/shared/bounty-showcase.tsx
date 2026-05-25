@@ -378,5 +378,6 @@ function makeBounty(i: FixtureInput): BountyFeedItem {
     claimedByCurrentUser: false,
     rewardToken: null,
     inProgressCount: 0,
+    lotteryJoinedCount: i.claimed + i.pending,
   };
 }

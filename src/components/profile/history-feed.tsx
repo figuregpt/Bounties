@@ -26,7 +26,7 @@ export function HistoryFeed({ rows }: Props) {
   return (
     <ul className="space-y-2">
       {rows.map((row) => {
-        const badge = badgeForStatus(row.status);
+        const badge = badgeForRow(row);
         const eventAt =
           row.claimedAt ?? row.failedAt ?? row.expiredAt ?? row.updatedAt;
         return (
@@ -104,12 +104,26 @@ export function HistoryFeed({ rows }: Props) {
   );
 }
 
-function badgeForStatus(status: ClaimStatus): {
+function badgeForRow(row: ProfileHistoryRow): {
   label: string;
   tone: string;
   subline: (row: ProfileHistoryRow) => string;
 } {
-  switch (status) {
+  // Lottery losers are NOT a verification failure — they completed
+  // every action correctly, the random draw just didn't pick them.
+  // Treat as a neutral "Not picked" state so it doesn't look like
+  // something is broken with their hunt.
+  if (
+    row.status === "failed" &&
+    row.failureCategory === "not_selected_lottery"
+  ) {
+    return {
+      label: "Not picked",
+      tone: "border-border-default bg-bg-elevated text-text-secondary",
+      subline: () => "You joined but weren't drawn in the lottery.",
+    };
+  }
+  switch (row.status) {
     case "claimed_reward":
       return {
         label: "Claimed",
@@ -136,7 +150,7 @@ function badgeForStatus(status: ClaimStatus): {
       };
     default:
       return {
-        label: status,
+        label: row.status,
         tone: "border-border-default bg-bg-elevated text-text-secondary",
         subline: () => "—",
       };
