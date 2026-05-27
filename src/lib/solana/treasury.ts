@@ -196,12 +196,47 @@ export async function sendReward(
             return new PublicKey(transfer.fee!.toWalletAddress);
           })()
         : null;
-    const feeRawAmount =
+    let feeRawAmount =
       transfer.fee && transfer.fee.amount > 0
         ? isNative
           ? solToLamports(transfer.fee.amount)
           : toRawAmount(transfer.fee.amount, transfer.decimals)
         : BigInt(0);
+
+    // Rent-exempt floor for native-SOL fee co-transfers. A claim with
+    // a tiny fee (e.g. 5% of 0.01 SOL = 500K lamports) was failing
+    // simulation with "account (2) insufficient funds for rent" when
+    // the revenue wallet was empty — Solana refuses to create a
+    // system account below ~890K lamports. We top the fee up to the
+    // rent-exempt minimum so the destination crosses the threshold
+    // on its first inbound. Any subsequent transfers add to it
+    // without ever dipping below, so this only ever fires once per
+    // brand-new revenue wallet.
+    if (isNative && feeRecipient && feeRawAmount > BigInt(0)) {
+      try {
+        const [rentMin, feeBal] = await Promise.all([
+          connection.getMinimumBalanceForRentExemption(0),
+          connection.getBalance(feeRecipient, "confirmed"),
+        ]);
+        const rentMinBig = BigInt(rentMin);
+        if (BigInt(feeBal) + feeRawAmount < rentMinBig) {
+          const bumpedTo = rentMinBig - BigInt(feeBal);
+          console.warn(
+            `[treasury] bumping native fee transfer ${feeRawAmount} → ${bumpedTo} lamports to clear rent-exempt minimum on ${feeRecipient.toBase58()}`,
+          );
+          feeRawAmount = bumpedTo;
+        }
+      } catch (err) {
+        // Best-effort guard. If we can't probe the balance we fall
+        // through with the original fee — the rest of the tx flow
+        // will surface a clean error if it actually trips rent.
+        console.warn(
+          "[treasury] rent-exempt preflight failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
     const totalOutflow = rawAmount + feeRawAmount;
 
     if (!isNative) {
