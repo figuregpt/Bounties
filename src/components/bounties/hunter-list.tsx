@@ -126,12 +126,12 @@ function toneFor(
   }
   switch (row.status) {
     case "claimed_reward":
-      // Lottery view collapses "verified (drawn but not claimed)" and
-      // "claimed (drawn + reward sent)" into a single "Winner" pill —
-      // both are winners and the claim-vs-pending distinction is
-      // internal state the viewer doesn't need to disambiguate.
+      // Lottery rows: leading "Winner" makes the draw outcome
+      // unambiguous, trailing "Claimed" tells you the reward already
+      // landed in their wallet. Non-lottery keeps the original
+      // "Claimed" label since there's no draw to distinguish.
       return {
-        label: isLottery ? "Winner" : "Claimed",
+        label: isLottery ? "Winner · Claimed" : "Claimed",
         bg: "bg-success-soft",
         text: "text-success",
       };
