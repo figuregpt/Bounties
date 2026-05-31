@@ -72,6 +72,18 @@ export function HolderRequirementSection({ value, onChange, chain }: Props) {
         balance to gate the bounty on wallet holdings.
       </div>
 
+      <div className="flex items-center gap-1.5 text-caption text-text-tertiary">
+        <span
+          className="size-1.5 rounded-full"
+          style={{ background: chain === "monad" ? "#836EF9" : "#14F195" }}
+        />
+        Holder token must be on{" "}
+        <span className="font-medium text-text-secondary">
+          {chain === "monad" ? "Monad" : "Solana"}
+        </span>
+        {" "}— checked against the hunter&apos;s {chain === "monad" ? "Monad" : "Solana"} wallet.
+      </div>
+
       {showPicker ? (
         <TokenPicker
           selected={null}

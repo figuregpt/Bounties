@@ -230,27 +230,15 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
             Quick picks
           </p>
           <div className="flex flex-wrap gap-2">
-            {picks.map((p) => {
-              // BNTY is the platform token; mint isn't live yet so the
-              // chip is informational only — surface it disabled with a
-              // 'Soon' badge instead of routing into enrichment.
-              const isComingSoon = p.symbol.toUpperCase() === "BNTY";
-              return (
+            {picks
+              .filter((p) => p.symbol.toUpperCase() !== "BNTY")
+              .map((p) => (
                 <button
                   key={p.mint}
                   type="button"
-                  onClick={() => {
-                    if (isComingSoon) return;
-                    void enrich(p.mint);
-                  }}
-                  disabled={loading || isComingSoon}
-                  aria-disabled={isComingSoon}
-                  className={cn(
-                    "press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors disabled:cursor-not-allowed",
-                    isComingSoon
-                      ? "opacity-60"
-                      : "hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60",
-                  )}
+                  onClick={() => void enrich(p.mint)}
+                  disabled={loading}
+                  className="press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60"
                 >
                   <TokenAvatar
                     logoUrl={p.logoUrl}
@@ -258,14 +246,8 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
                     size={18}
                   />
                   <span className="font-medium">{p.symbol}</span>
-                  {isComingSoon && (
-                    <span className="rounded-[var(--radius-pill)] bg-bg-base px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">
-                      Soon
-                    </span>
-                  )}
                 </button>
-              );
-            })}
+              ))}
           </div>
         </div>
       )}

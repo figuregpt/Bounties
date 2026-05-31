@@ -33,7 +33,13 @@ export async function GET(_req: NextRequest) {
   }
   const db = getDb();
 
-  const canonicalTokens = Object.values(getCanonicalTokens());
+  // Quick-pick chips: stablecoins only. SOL is dropped (we don't promote
+  // it as a holder/reward chip) and BNTY isn't live yet, so neither shows
+  // in the chip row. They stay in the canonical registry for native-SOL
+  // handling + enrichment short-circuits.
+  const canonicalTokens = Object.values(getCanonicalTokens()).filter(
+    (t) => t.symbol !== "SOL" && t.symbol !== "BNTY",
+  );
   const defaultMints = canonicalTokens.map((t) => t.mint);
 
   // Strict gating: only surface tokens with a logo. Logoless rows can
