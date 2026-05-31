@@ -183,6 +183,12 @@ export function CreateBountyClient({
       rewardTokenSymbol: "",
       rewardTokenDecimals: 0,
       rewardPerHunterUsd: null,
+      // The holder-gate token must live on the bounty's chain too — clear
+      // it so a Solana token doesn't linger on a Monad bounty.
+      eligibilityFilters: {
+        ...form.eligibilityFilters,
+        holderRequirement: null,
+      },
     });
   };
 
@@ -697,6 +703,8 @@ export function CreateBountyClient({
             complete
           >
             <HolderRequirementSection
+              key={form.rewardChain}
+              chain={form.rewardChain}
               value={form.eligibilityFilters.holderRequirement ?? null}
               onChange={(next) =>
                 patch({

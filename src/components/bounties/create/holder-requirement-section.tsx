@@ -31,9 +31,14 @@ export type HolderRequirementValue = {
 type Props = {
   value: HolderRequirementValue;
   onChange: (next: HolderRequirementValue) => void;
+  /** Bounty's settlement chain — the holder gate must check a balance on
+   *  the SAME chain (a Monad bounty gates on a Monad token, checked
+   *  against the hunter's Monad wallet). Drives the picker's address
+   *  format + quick-picks. */
+  chain: "solana" | "monad";
 };
 
-export function HolderRequirementSection({ value, onChange }: Props) {
+export function HolderRequirementSection({ value, onChange, chain }: Props) {
   // Cache the rich SelectedToken locally so we can render logo + price.
   // Parent only persists the compact subset, so we don't lose visuals
   // when the section re-mounts mid-form.
@@ -68,7 +73,11 @@ export function HolderRequirementSection({ value, onChange }: Props) {
       </div>
 
       {showPicker ? (
-        <TokenPicker selected={null} onChange={handleTokenChange} />
+        <TokenPicker
+          selected={null}
+          onChange={handleTokenChange}
+          chain={chain}
+        />
       ) : (
         <div className="rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
