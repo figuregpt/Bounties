@@ -13,7 +13,11 @@ import {
   TokenPriceUnavailableError,
   type EnrichedToken as DexEnriched,
 } from "./dexscreener";
-import { currentNetwork, getCanonicalByMint } from "./canonical";
+import {
+  currentNetwork,
+  getCanonicalByMint,
+  getMonadCanonicalByMint,
+} from "./canonical";
 
 /**
  * Server-side token enrichment.
@@ -134,6 +138,46 @@ export async function enrichToken(
 
   if (existing?.flaggedAsScam) {
     throw new TokenFlaggedError(existing.mint, existing.symbol);
+  }
+
+  // Monad canonical short-circuit (USDC): no DexScreener logo, so hardcode
+  // it ($1, USDC logo, 6 decimals) instead of failing the strict logo gate.
+  if (chain === "monad") {
+    const mc = getMonadCanonicalByMint(mint);
+    if (mc) {
+      const now = new Date();
+      const upserted = await db
+        .insert(tokens)
+        .values({
+          chain,
+          mint,
+          symbol: mc.symbol,
+          name: mc.name,
+          decimals: mc.decimals,
+          logoUrl: mc.logoUrl,
+          category: mc.category,
+          jupiterPriceUsd: String(mc.priceUsd),
+          jupiterPriceUpdatedAt: now,
+          priceChange24hPercent: "0",
+          firstSeenAt: mc.firstSeenAt,
+          isAdminVerified: true,
+        })
+        .onConflictDoUpdate({
+          target: [tokens.chain, tokens.mint],
+          set: {
+            symbol: mc.symbol,
+            name: mc.name,
+            decimals: mc.decimals,
+            logoUrl: mc.logoUrl,
+            category: mc.category,
+            jupiterPriceUsd: String(mc.priceUsd),
+            jupiterPriceUpdatedAt: now,
+            isAdminVerified: true,
+          },
+        })
+        .returning();
+      return rowToEnriched(upserted[0]!);
+    }
   }
 
   // Bug 1 fix: short-circuit canonical stablecoins. DexScreener can't

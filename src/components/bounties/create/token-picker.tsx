@@ -75,6 +75,19 @@ const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
  *  live price). Enriching it yields symbol "MON", which the create flow
  *  settles as NATIVE MON (value send), not an ERC-20 transfer. */
 const MONAD_MON_ADDRESS = "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A";
+const MONAD_USDC_ADDRESS = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
+const MON_LOGO =
+  "https://cdn.dexscreener.com/cms/images/dbdf1b40bce8361da6215642ec5d4ad7aba0c748daa09eee62e3d6446008d469?width=800&height=800&quality=95&format=auto";
+const USDC_LOGO =
+  "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png";
+
+/** One-click chips for Monad bounties (the Solana quick-picks API is
+ *  Solana-only). Enriching the address resolves symbol/decimals/price. */
+const MONAD_QUICK_PICKS: { address: string; label: string; logoUrl: string }[] =
+  [
+    { address: MONAD_MON_ADDRESS, label: "Native MON", logoUrl: MON_LOGO },
+    { address: MONAD_USDC_ADDRESS, label: "USDC", logoUrl: USDC_LOGO },
+  ];
 
 export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
   const [input, setInput] = useState("");
@@ -87,7 +100,12 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
   // is a curated Solana set (USDC/SOL/BNTY); Monad creators paste a 0x
   // address directly.
   useEffect(() => {
-    if (chain !== "solana") return;
+    // Clear any stale Solana picks when the bounty isn't on Solana — the
+    // Monad chip row is rendered separately from a static list.
+    if (chain !== "solana") {
+      setPicks([]);
+      return;
+    }
     let cancelled = false;
     void fetch("/api/tokens/quick-picks", { cache: "no-store" })
       .then((r) => r.json())
@@ -207,20 +225,20 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
           <p className="mb-2 text-caption uppercase tracking-wider text-text-tertiary">
             Quick picks
           </p>
-          <button
-            type="button"
-            onClick={() => void enrich(MONAD_MON_ADDRESS)}
-            disabled={loading}
-            className={cn(
-              "press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60",
-            )}
-          >
-            <span
-              className="size-[18px] rounded-full"
-              style={{ background: "#836EF9" }}
-            />
-            Native MON
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {MONAD_QUICK_PICKS.map((q) => (
+              <button
+                key={q.address}
+                type="button"
+                onClick={() => void enrich(q.address)}
+                disabled={loading}
+                className="press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60"
+              >
+                <TokenAvatar logoUrl={q.logoUrl} symbol={q.label} size={18} />
+                <span className="font-medium">{q.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
