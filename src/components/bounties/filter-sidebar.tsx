@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Filter, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CHAIN_LOGOS } from "@/lib/chains/logos";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { formatUsd } from "@/lib/format";
@@ -35,6 +36,7 @@ const STATUS_OPTIONS: { label: string; value: BountyStatus }[] = [
 const TOKEN_CHIPS: { label: string; symbol: string }[] = [
   { label: "USDC", symbol: "USDC" },
   { label: "SOL", symbol: "SOL" },
+  { label: "MON", symbol: "MON" },
 ];
 
 /** Solana base58 pubkeys are 32-44 chars in their canonical encoding.
@@ -85,12 +87,13 @@ export function FilterSidebar({ filters, onChange }: Props) {
         <div className="flex flex-wrap gap-1.5">
           {(
             [
-              { value: undefined, label: "All", dot: null },
-              { value: "solana", label: "Solana", dot: "#14F195" },
-              { value: "monad", label: "Monad", dot: "#836EF9" },
+              { value: undefined, label: "All", chain: null },
+              { value: "solana", label: "Solana", chain: "solana" },
+              { value: "monad", label: "Monad", chain: "monad" },
             ] as const
           ).map((o) => {
             const active = filters.chain === o.value;
+            const logo = o.chain ? CHAIN_LOGOS[o.chain] : null;
             return (
               <button
                 key={o.label}
@@ -103,10 +106,12 @@ export function FilterSidebar({ filters, onChange }: Props) {
                     : "border-border-default text-text-tertiary hover:text-text-secondary",
                 )}
               >
-                {o.dot && (
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{ background: o.dot }}
+                {logo && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logo}
+                    alt=""
+                    className="size-4 rounded-full object-contain"
                   />
                 )}
                 {o.label}

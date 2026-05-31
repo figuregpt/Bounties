@@ -1,7 +1,7 @@
 "use client";
 
 import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { useCallback } from "react";
+import { useEvmConnectModal } from "@/app/evm-provider";
 
 /**
  * Thin wrapper over wagmi's hooks — the EVM/Monad counterpart to
@@ -28,20 +28,18 @@ export type EvmWalletState = {
 
 export function useEvmWallet(): EvmWalletState {
   const { address, isConnected, connector } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
+  const { isPending } = useConnect();
   const { disconnect } = useDisconnect();
-
-  const openConnectModal = useCallback(() => {
-    const injected = connectors[0];
-    if (injected) connect({ connector: injected });
-  }, [connect, connectors]);
+  const modal = useEvmConnectModal();
 
   return {
     address: address ?? null,
     isConnected,
     walletName: connector?.name ?? null,
     connecting: isPending,
-    openConnectModal,
+    // Open the wallet-selection modal (MetaMask / Phantom / Rabby / …)
+    // instead of auto-connecting the first injected provider.
+    openConnectModal: () => modal.open(),
     disconnect: () => disconnect(),
   };
 }
