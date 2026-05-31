@@ -349,6 +349,7 @@ export async function POST(
   // the launch-time clock, not the draft placeholder.
   void announceBountyLaunched({
     slug: activated.slug,
+    chain: activated.chain,
     rewardTokenSymbol: activated.rewardTokenSymbol,
     rewardPerHunter: activated.rewardPerHunter,
     rewardPerHunterUsd: activated.rewardPerHunterUsd,

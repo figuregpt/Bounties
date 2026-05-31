@@ -18,6 +18,8 @@ import type { EligibilityFilters } from "@/lib/db/schema/bounties";
 
 export type BountyAnnouncementInput = {
   slug: string;
+  /** Settlement chain — 'solana' | 'monad'. Surfaced in the embed. */
+  chain: string;
   rewardTokenSymbol: string;
   rewardPerHunter: string | number;
   rewardPerHunterUsd?: string | number | null;
@@ -41,8 +43,10 @@ export type BountyAnnouncementInput = {
   tokenLogoUrl?: string | null;
 };
 
-const COLOR_ACCENT = 0x8b8df2;
 const FALLBACK_APP_URL = "https://bounties.fm";
+// Per-chain embed accent (left border) + label so the network is obvious.
+const MONAD_COLOR = 0x836ef9;
+const SOLANA_COLOR = 0x14f195;
 
 export async function announceBountyLaunched(
   input: BountyAnnouncementInput,
@@ -75,7 +79,17 @@ export async function announceBountyLaunched(
     input.creator.displayName ??
     (input.creator.handle ? `@${input.creator.handle}` : "Anonymous");
 
+  const isMonad = input.chain === "monad";
+  const networkLabel = isMonad ? "Monad" : "Solana";
+  const networkEmoji = isMonad ? "🟣" : "🟢";
+  const networkColor = isMonad ? MONAD_COLOR : SOLANA_COLOR;
+
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [
+    {
+      name: "Network",
+      value: `${networkEmoji} ${networkLabel}`,
+      inline: true,
+    },
     {
       name: "Reward per hunter",
       value: `${reward}${rewardUsd}`,
@@ -125,10 +139,10 @@ export async function announceBountyLaunched(
       : "A new bounty is live. Complete the actions on X to earn the reward.";
 
   const embed: Record<string, unknown> = {
-    title: `${input.rewardTokenSymbol} bounty just went live`,
+    title: `${networkEmoji} ${input.rewardTokenSymbol} bounty just went live on ${networkLabel}`,
     url: bountyUrl,
     description,
-    color: COLOR_ACCENT,
+    color: networkColor,
     timestamp: new Date().toISOString(),
     author: {
       name: `by ${creatorName}${
@@ -152,7 +166,7 @@ export async function announceBountyLaunched(
   const rolePrefix = roleId ? `<@&${roleId}> ` : "";
 
   const body = JSON.stringify({
-    content: `${rolePrefix}New bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
+    content: `${rolePrefix}New ${networkLabel} bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
     embeds: [embed],
     allowed_mentions: roleId
       ? { parse: [], roles: [roleId] }
