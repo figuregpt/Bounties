@@ -113,6 +113,7 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
   const queryFilters = useMemo(
     () => ({
       sortBy: filters.sortBy,
+      chain: filters.chain,
       showIneligible: filters.showIneligible,
       showFilled: filters.showFilled,
       rewardTokens:

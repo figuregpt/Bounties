@@ -16,6 +16,7 @@ import {
   WalletPill,
 } from "@/components/ui/dropdown";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { useEvmWallet } from "@/hooks/useEvmWallet";
 import { formatHandle } from "@/lib/format";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -37,12 +38,10 @@ export type ConnectedUser = {
 
 export function UserMenu({ user }: { user?: ConnectedUser | null }) {
   const router = useRouter();
-  const {
-    address: connectedAddress,
-    isConnected,
-    openConnectModal,
-    disconnect,
-  } = useWalletConnection();
+  // Both wallet stacks — a user can connect a Solana wallet (for Solana
+  // bounties) and a Monad wallet (for Monad bounties) independently.
+  const sol = useWalletConnection();
+  const evm = useEvmWallet();
 
   if (!user) {
     return (
@@ -90,14 +89,24 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
               </p>
             </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-3 space-y-1.5">
             <WalletStatus
-              connectedAddress={connectedAddress}
-              isConnected={isConnected}
-              onConnect={openConnectModal}
+              label="Solana"
+              dot="#14F195"
+              connectedAddress={sol.address}
+              isConnected={sol.isConnected}
+              onConnect={sol.openConnectModal}
               onDisconnect={() => {
-                void disconnect();
+                void sol.disconnect();
               }}
+            />
+            <WalletStatus
+              label="Monad"
+              dot="#836EF9"
+              connectedAddress={evm.address}
+              isConnected={evm.isConnected}
+              onConnect={evm.openConnectModal}
+              onDisconnect={() => evm.disconnect()}
             />
           </div>
         </DropdownHeader>
@@ -135,11 +144,15 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
  * surface a prominent CTA instead of a misleading "saved address".
  */
 function WalletStatus({
+  label,
+  dot,
   connectedAddress,
   isConnected,
   onConnect,
   onDisconnect,
 }: {
+  label: string;
+  dot: string;
   connectedAddress: string | null;
   isConnected: boolean;
   onConnect: () => void;
@@ -148,11 +161,16 @@ function WalletStatus({
   if (isConnected && connectedAddress) {
     return (
       <div className="flex items-center gap-1.5">
+        <span
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ background: dot }}
+          title={label}
+        />
         <WalletPill address={connectedAddress} />
         <button
           type="button"
-          title="Disconnect wallet"
-          aria-label="Disconnect wallet"
+          title={`Disconnect ${label} wallet`}
+          aria-label={`Disconnect ${label} wallet`}
           onClick={(e) => {
             e.preventDefault();
             onDisconnect();
@@ -173,8 +191,12 @@ function WalletStatus({
       }}
       className="press inline-flex items-center gap-1.5 rounded-[7px] border border-dashed border-accent-primary bg-accent-soft px-2.5 py-1.5 text-[11px] font-medium text-accent-text transition-colors hover:bg-accent-soft/80"
     >
+      <span
+        className="size-1.5 shrink-0 rounded-full"
+        style={{ background: dot }}
+      />
       <Wallet className="size-3" strokeWidth={2.25} />
-      <span>Connect wallet</span>
+      <span>Connect {label} wallet</span>
     </button>
   );
 }

@@ -111,6 +111,7 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            <ChainBadge chain={bounty.chain} />
             {isLottery && (
               <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-text">
                 Lottery
@@ -210,6 +211,24 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
 /* =========================================================================
    Sub-components
    ========================================================================= */
+
+/** Which chain the bounty settles on. Shown on every card so the feed
+ *  makes the network obvious at a glance (Monad purple / Solana green). */
+function ChainBadge({ chain }: { chain: string }) {
+  const isMonad = chain === "monad";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-bg-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
+      title={isMonad ? "Settles on Monad" : "Settles on Solana"}
+    >
+      <span
+        className="size-1.5 rounded-full"
+        style={{ background: isMonad ? "#836EF9" : "#14F195" }}
+      />
+      {isMonad ? "Monad" : "Solana"}
+    </span>
+  );
+}
 
 function BountyTokenAvatar({
   symbol,

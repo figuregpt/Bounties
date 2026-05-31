@@ -81,6 +81,7 @@ const QuerySchema = z.object({
   minRewardPerHunterUsd: z.coerce.number().min(0).optional(),
   q: z.string().trim().min(1).optional(),
   endingWithinHours: z.coerce.number().int().min(1).optional(),
+  chain: z.enum(["solana", "monad"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
     user,
     {
       sortBy: q.sortBy,
+      chain: q.chain,
       showIneligible: q.showIneligible,
       showFilled: q.showFilled,
       rewardTokens: q.rewardTokens,
@@ -172,7 +174,9 @@ export async function POST(req: NextRequest) {
   /* ---- Resolve reward token + enforce $5 floor ----------------------- */
   let tokenRow;
   try {
-    tokenRow = await enrichToken(input.rewardTokenMint);
+    tokenRow = await enrichToken(input.rewardTokenMint, {
+      chain: input.rewardChain,
+    });
   } catch (err) {
     if (err instanceof TokenFlaggedError) {
       return NextResponse.json(
@@ -362,6 +366,7 @@ export async function POST(req: NextRequest) {
       creatorUserId: user.id,
       slug,
       status: "draft",
+      chain: input.rewardChain,
       tweetId,
       tweetUrl: input.tweetUrl,
       tweetAuthorTwitterId,
@@ -432,7 +437,7 @@ export async function POST(req: NextRequest) {
   // Fire-and-forget popularity tracking. Failure here shouldn't fail
   // the create — worst case the quick-picks ranking is slightly off.
   try {
-    await incrementTokenUsage(tokenRow.mint);
+    await incrementTokenUsage(tokenRow.mint, input.rewardChain);
   } catch (err) {
     console.warn(
       "[POST /api/bounties] incrementTokenUsage failed:",

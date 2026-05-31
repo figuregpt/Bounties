@@ -198,12 +198,13 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    const { hasMinTokenBalance } = await import(
-      "@/lib/solana/token-balance"
-    );
+    // Holder gate runs on the bounty's chain — a Monad bounty checks an
+    // ERC-20 balance on Monad, a Solana bounty checks an SPL balance.
+    const holderChain = bounty.chain === "monad" ? "monad" : "solana";
+    const { getChainAdapter } = await import("@/lib/chains");
     let ok = false;
     try {
-      ok = await hasMinTokenBalance({
+      ok = await getChainAdapter(holderChain).hasMinTokenBalance({
         wallet: parsed.data.walletAddress,
         mint: holderReq.mint,
         minAmount: holderReq.minAmount,
@@ -247,6 +248,8 @@ export async function POST(req: NextRequest) {
       .values({
         bountyId: bounty.id,
         hunterUserId: user.id,
+        // Freeze the settlement chain at hunt time (like rewardTokenMint).
+        chain: bounty.chain,
         status: "awaiting_action",
         huntStartedAt: now,
         rewardAmount: bounty.rewardPerHunter,

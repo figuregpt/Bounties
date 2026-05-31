@@ -38,6 +38,7 @@ const CREATED_VISIBLE: BountyStatus[] = [
 
 export type ProfileToClaimRow = {
   claimId: string;
+  chain: string;
   bountySlug: string;
   bountyTitle: string;
   creatorHandle: string;
@@ -135,6 +136,7 @@ export async function getProfileData(
   const toClaim = await db
     .select({
       claimId: claims.id,
+      chain: claims.chain,
       bountySlug: bounties.slug,
       bountyTitle: bounties.tweetCachedData,
       creatorHandle: users.handle,
@@ -147,7 +149,13 @@ export async function getProfileData(
     .from(claims)
     .innerJoin(bounties, eq(bounties.id, claims.bountyId))
     .leftJoin(users, eq(users.id, bounties.creatorUserId))
-    .leftJoin(tokens, eq(tokens.mint, claims.rewardTokenMint))
+    .leftJoin(
+      tokens,
+      and(
+        eq(tokens.chain, claims.chain),
+        eq(tokens.mint, claims.rewardTokenMint),
+      ),
+    )
     .where(
       and(eq(claims.hunterUserId, user.id), eq(claims.status, "verified")),
     )
@@ -257,6 +265,7 @@ export async function getProfileData(
     user,
     toClaim: toClaim.map((r) => ({
       claimId: r.claimId,
+      chain: r.chain,
       bountySlug: r.bountySlug,
       bountyTitle: extractTitle(r.bountyTitle),
       creatorHandle: r.creatorHandle ?? "(unknown)",

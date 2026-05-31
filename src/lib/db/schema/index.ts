@@ -5,6 +5,7 @@
  */
 
 export * from "./users";
+export * from "./wallets";
 export * from "./auth";
 export * from "./bounties";
 export * from "./claims";

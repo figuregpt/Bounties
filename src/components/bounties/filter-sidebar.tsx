@@ -81,6 +81,41 @@ export function FilterSidebar({ filters, onChange }: Props) {
         ))}
       </Group>
 
+      <Group label="Network">
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              { value: undefined, label: "All", dot: null },
+              { value: "solana", label: "Solana", dot: "#14F195" },
+              { value: "monad", label: "Monad", dot: "#836EF9" },
+            ] as const
+          ).map((o) => {
+            const active = filters.chain === o.value;
+            return (
+              <button
+                key={o.label}
+                type="button"
+                onClick={() => onChange({ ...filters, chain: o.value })}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-3 py-1.5 text-small transition-colors",
+                  active
+                    ? "border-accent-primary bg-accent-soft text-accent-text"
+                    : "border-border-default text-text-tertiary hover:text-text-secondary",
+                )}
+              >
+                {o.dot && (
+                  <span
+                    className="size-1.5 rounded-full"
+                    style={{ background: o.dot }}
+                  />
+                )}
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      </Group>
+
       <Group label="Reward token">
         <TokenFilter
           selected={filters.rewardTokens}

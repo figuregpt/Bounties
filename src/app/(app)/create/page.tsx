@@ -5,6 +5,10 @@ import {
   getRevenueWalletPublicKeyOrNull,
   getTreasuryPublicKeyOrNull,
 } from "@/lib/solana/env";
+import {
+  getMonadTreasuryAddressOrNull,
+  monadEscrowMode,
+} from "@/lib/chains/evm/env";
 import { CreateBountyClient } from "./create-bounty-client";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +36,8 @@ export default async function CreatePage() {
       escrowMode={escrowMode()}
       treasuryAddress={getTreasuryPublicKeyOrNull()}
       revenueAddress={getRevenueWalletPublicKeyOrNull()}
+      monadTreasuryAddress={getMonadTreasuryAddressOrNull()}
+      monadEscrowMode={monadEscrowMode()}
     />
   );
 }

@@ -31,11 +31,15 @@ type Props = {
   rewardPerHunter: number;
   maxHunters: number;
   mode: RewardMode;
+  /** Settlement chain. Switching it clears the selected token (addresses
+   *  and prices don't carry across chains). */
+  chain: "solana" | "monad";
   /** True for `pool_lottery` distribution: switches the UI to ask
    *  for "Total prize pool" and "Number of winners" directly, since
    *  per-hunter × slots framing confuses the lottery flow. */
   isLottery?: boolean;
   onTokenChange: (next: TokenOption | null) => void;
+  onChainChange: (next: "solana" | "monad") => void;
   onPerHunterChange: (next: number) => void;
   onMaxHuntersChange: (next: number) => void;
   onModeChange: (next: RewardMode) => void;
@@ -46,8 +50,10 @@ export function RewardSection({
   rewardPerHunter,
   maxHunters,
   mode,
+  chain,
   isLottery = false,
   onTokenChange,
+  onChainChange,
   onPerHunterChange,
   onMaxHuntersChange,
   onModeChange,
@@ -72,10 +78,18 @@ export function RewardSection({
 
   return (
     <div className="space-y-5">
+      {/* Network -------------------------------------------------------- */}
+      <div>
+        <h3 className="mb-2 text-small font-medium text-text-primary">
+          Network
+        </h3>
+        <ChainToggle chain={chain} onChange={onChainChange} />
+      </div>
+
       {/* Token picker --------------------------------------------------- */}
       <div>
         <h3 className="mb-2 text-small font-medium text-text-primary">Token</h3>
-        <TokenPicker selected={token} onChange={onTokenChange} />
+        <TokenPicker selected={token} onChange={onTokenChange} chain={chain} />
       </div>
 
       {/* Mode tabs (fixed_slot only — lottery has its own simplified UI) */}
@@ -201,6 +215,46 @@ export function RewardSection({
             : `Bounties have two minimums: $${MIN_TOTAL_POOL_USD} total pool and $${MIN_REWARD_PER_HUNTER_USD} per hunter. Platform fee · 5% comes from each claim, not from the pool you escrow now.`}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Solana / Monad segmented toggle. Picking a network clears the token. */
+function ChainToggle({
+  chain,
+  onChange,
+}: {
+  chain: "solana" | "monad";
+  onChange: (next: "solana" | "monad") => void;
+}) {
+  const options: Array<{ value: "solana" | "monad"; label: string; dot: string }> = [
+    { value: "solana", label: "Solana", dot: "#14F195" },
+    { value: "monad", label: "Monad", dot: "#836EF9" },
+  ];
+  return (
+    <div className="inline-flex rounded-[var(--radius-button)] border border-border-default bg-bg-surface p-1">
+      {options.map((o) => {
+        const active = chain === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-small font-medium transition-colors",
+              active
+                ? "bg-bg-elevated text-text-primary"
+                : "text-text-tertiary hover:text-text-secondary",
+            )}
+          >
+            <span
+              className="size-1.5 rounded-full"
+              style={{ background: o.dot }}
+            />
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

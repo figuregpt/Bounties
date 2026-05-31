@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tokens } from "@/lib/db/schema";
 
@@ -31,13 +31,15 @@ export type TokenInfo = {
 
 export async function getTokenInfo(
   mint: string,
+  chain?: string,
 ): Promise<TokenInfo | null> {
   const db = getDb();
-  const [row] = await db
-    .select()
-    .from(tokens)
-    .where(eq(tokens.mint, mint))
-    .limit(1);
+  // tokens is unique on (chain, mint) post-migration; scope by chain when
+  // the caller knows it so we never return a wrong-chain row.
+  const where = chain
+    ? and(eq(tokens.chain, chain), eq(tokens.mint, mint))
+    : eq(tokens.mint, mint);
+  const [row] = await db.select().from(tokens).where(where).limit(1);
   if (!row) return null;
   return {
     mint: row.mint,
@@ -56,7 +58,7 @@ export async function getTokenInfo(
         ? Number(row.priceChange24hPercent)
         : null,
     dexScreenerUrl: row.dexScreenerPairAddress
-      ? `https://dexscreener.com/solana/${row.dexScreenerPairAddress}`
+      ? `https://dexscreener.com/${row.chain}/${row.dexScreenerPairAddress}`
       : null,
     isAdminVerified: row.isAdminVerified,
     flaggedAsScam: row.flaggedAsScam,

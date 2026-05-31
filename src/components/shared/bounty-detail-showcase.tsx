@@ -510,6 +510,7 @@ function makeBounty(): Bounty {
     creatorUserId: "creator-fixture",
     slug: "fixture-bounty",
     status: "active",
+    chain: "solana",
     tweetId: "tweet-fixture",
     tweetUrl: "https://x.com/example/status/1",
     tweetAuthorTwitterId: "tw_example",

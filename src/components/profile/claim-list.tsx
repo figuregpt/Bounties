@@ -13,7 +13,7 @@ type Props = {
   claiming: Set<string>;
   /** True when claim-all is iterating — single Claim buttons disabled. */
   bulkInFlight: boolean;
-  onClaim: (claimId: string) => void;
+  onClaim: (claimId: string, chain: string) => void;
 };
 
 /**
@@ -79,7 +79,7 @@ export function ClaimList({ rows, claiming, bulkInFlight, onClaim }: Props) {
             </div>
             <button
               type="button"
-              onClick={() => onClaim(row.claimId)}
+              onClick={() => onClaim(row.claimId, row.chain)}
               disabled={disabled}
               className="press inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] bg-accent-primary px-4 text-small font-medium text-[#100F16] hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
             >

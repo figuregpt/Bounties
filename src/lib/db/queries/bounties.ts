@@ -110,6 +110,8 @@ export type BountySortBy =
 
 export type BountyFilters = {
   status?: BountyStatus | BountyStatus[];
+  /** Settlement chain filter — 'solana' | 'monad'. Undefined = all. */
+  chain?: string;
   rewardTokens?: string[];
   minRewardPerHunterUsd?: number;
   categories?: BountyCategory[];
@@ -377,6 +379,10 @@ function buildWhere(filters: BountyFilters): SQL | undefined {
         )`,
       );
     }
+  }
+
+  if (filters.chain === "solana" || filters.chain === "monad") {
+    conds.push(eq(bounties.chain, filters.chain));
   }
 
   if (filters.rewardTokens && filters.rewardTokens.length > 0) {

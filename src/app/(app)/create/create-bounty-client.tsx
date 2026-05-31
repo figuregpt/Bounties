@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, Wallet } from "lucide-react";
 import { PublicKey } from "@solana/web3.js";
+import { erc20Abi } from "viem";
+import {
+  useSendTransaction,
+  useWriteContract,
+  usePublicClient,
+} from "wagmi";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { useEvmWallet } from "@/hooks/useEvmWallet";
 import { FormSection } from "@/components/ui/form-section";
 import {
   sectionForPath,
@@ -84,6 +91,11 @@ type Props = {
    *  becomes two transfers (pool → treasury, creation fee → revenue).
    *  Null means fees stay in the treasury (legacy mode). */
   revenueAddress: string | null;
+  /** Monad (EVM) treasury address that receives the escrow. Null when
+   *  MONAD_TREASURY_WALLET_PUBLIC_KEY isn't configured. */
+  monadTreasuryAddress: string | null;
+  /** Monad escrow mode — `mock` skips the on-chain transfer. */
+  monadEscrowMode: "mock" | "testnet" | "mainnet";
 };
 
 export function CreateBountyClient({
@@ -91,6 +103,8 @@ export function CreateBountyClient({
   escrowMode,
   treasuryAddress,
   revenueAddress,
+  monadTreasuryAddress,
+  monadEscrowMode,
 }: Props) {
   const router = useRouter();
   const {
@@ -101,6 +115,11 @@ export function CreateBountyClient({
     sendTransaction,
     openConnectModal,
   } = useWalletConnection();
+  // EVM (Monad) wallet + tx senders. No-op until a Monad bounty is built.
+  const evm = useEvmWallet();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { writeContractAsync } = useWriteContract();
+  const monadPublicClient = usePublicClient();
   const [form, setForm] = useState<CreateBountyInput>(() =>
     defaultCreateBountyValues(),
   );
@@ -153,6 +172,20 @@ export function CreateBountyClient({
     });
   };
 
+  // Switching network clears the token — addresses and prices don't carry
+  // across chains, and the picker validates a different format per chain.
+  const onChainChange = (next: "solana" | "monad") => {
+    if (next === form.rewardChain) return;
+    setToken(null);
+    patch({
+      rewardChain: next,
+      rewardTokenMint: "",
+      rewardTokenSymbol: "",
+      rewardTokenDecimals: 0,
+      rewardPerHunterUsd: null,
+    });
+  };
+
   /* ---- Validation --------------------------------------------------- */
   const validation = useMemo(
     () => validateForm({ form, tweetResolved, token }),
@@ -201,10 +234,87 @@ export function CreateBountyClient({
     }
 
     // 2. Escrow transfer (mock mode skips this entirely)
+    const isMonad = form.rewardChain === "monad";
+    const activeEscrowMode = isMonad ? monadEscrowMode : escrowMode;
     let txSignature: string | undefined;
-    if (escrowMode !== "mock") {
+    if (activeEscrowMode !== "mock") {
       setLaunchState("awaiting_signature");
       try {
+        if (isMonad) {
+          // ---- Monad (EVM) escrow: pool + fee → treasury in ONE tx ----
+          if (!monadTreasuryAddress) {
+            throw new Error(
+              "Monad treasury not configured on the server (set MONAD_TREASURY_WALLET_PUBLIC_KEY).",
+            );
+          }
+          if (!evm.isConnected || !evm.address) {
+            evm.openConnectModal();
+            setLaunchState("idle");
+            setLaunchError(
+              "Connect a Monad wallet to pay for the escrow, then click Launch again.",
+            );
+            return;
+          }
+          if (
+            evm.address.toLowerCase() === monadTreasuryAddress.toLowerCase()
+          ) {
+            setLaunchState("error");
+            setLaunchError(
+              "Your wallet is the treasury address. Switch to your personal wallet and try again.",
+            );
+            return;
+          }
+          // Save the connected Monad wallet so the payout routes to it.
+          if (evm.address !== user.walletAddress) {
+            try {
+              await fetch("/api/users/connect-wallet", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  walletAddress: evm.address,
+                  provider: evm.walletName,
+                  chain: "monad",
+                }),
+              });
+            } catch (err) {
+              console.warn("[launch] monad connect-wallet save failed:", err);
+            }
+          }
+          if (!token) throw new Error("No reward token selected");
+          const totalPoolMon = form.rewardPerHunter * form.maxHunters;
+          const creationFeeMon =
+            token.priceUsd > 0 ? BOUNTY_CREATION_FEE_USD / token.priceUsd : 0;
+          // Pool + fee land in the treasury together (single recipient).
+          const treasuryAmountMon = totalPoolMon + creationFeeMon;
+          let hash: `0x${string}`;
+          // toRawAmount handles scientific-notation floats; viem's
+          // parseEther/parseUnits throw on a stringified '1e-7'.
+          if (token.symbol === "MON") {
+            hash = await sendTransactionAsync({
+              to: monadTreasuryAddress as `0x${string}`,
+              value: toRawAmount(treasuryAmountMon, 18),
+            });
+          } else {
+            hash = await writeContractAsync({
+              address: token.mint as `0x${string}`,
+              abi: erc20Abi,
+              functionName: "transfer",
+              args: [
+                monadTreasuryAddress as `0x${string}`,
+                toRawAmount(treasuryAmountMon, token.decimals),
+              ],
+            });
+          }
+          setLaunchState("awaiting_confirmation");
+          if (monadPublicClient) {
+            const receipt =
+              await monadPublicClient.waitForTransactionReceipt({ hash });
+            if (receipt.status !== "success") {
+              throw new Error(`On-chain escrow reverted (${hash})`);
+            }
+          }
+          txSignature = hash;
+        } else {
         if (!treasuryAddress) {
           throw new Error(
             "Treasury address not configured on the server. Set TREASURY_WALLET_PUBLIC_KEY in .env.local and restart.",
@@ -329,6 +439,7 @@ export function CreateBountyClient({
           );
         }
         txSignature = signature;
+        }
       } catch (err) {
         // wallet-adapter throws `WalletSendTransactionError` etc. —
         // dump everything for debugging, surface the simulation logs
@@ -568,8 +679,10 @@ export function CreateBountyClient({
               rewardPerHunter={form.rewardPerHunter}
               maxHunters={form.maxHunters}
               mode={rewardMode}
+              chain={form.rewardChain}
               isLottery={form.distributionModel === "pool_lottery"}
               onTokenChange={onTokenChange}
+              onChainChange={onChainChange}
               onPerHunterChange={onPerHunterChange}
               onMaxHuntersChange={(n) => patch({ maxHunters: n })}
               onModeChange={setRewardMode}

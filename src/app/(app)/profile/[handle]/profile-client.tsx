@@ -4,6 +4,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { useEvmWallet } from "@/hooks/useEvmWallet";
+import { registerWalletForChain } from "@/hooks/useBountyWallet";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { PendingHero } from "@/components/profile/pending-hero";
 import { StatCards } from "@/components/profile/stat-cards";
@@ -44,11 +46,23 @@ export function ProfileClient({
   currentUserWalletAddress,
 }: Props) {
   const router = useRouter();
-  const {
-    address: connectedWallet,
-    isConnected,
-    openConnectModal,
-  } = useWalletConnection();
+  // A hunter may have claims on both chains — pick the right wallet per
+  // claim by its chain.
+  const sol = useWalletConnection();
+  const evm = useEvmWallet();
+  const walletFor = useCallback(
+    (chain: string) => {
+      const w = chain === "monad" ? evm : sol;
+      return {
+        chain: (chain === "monad" ? "monad" : "solana") as "solana" | "monad",
+        address: w.address,
+        isConnected: w.isConnected,
+        walletName: w.walletName,
+        openConnectModal: w.openConnectModal,
+      };
+    },
+    [evm, sol],
+  );
 
   const [activeTab, setActiveTab] = useState<ProfileTab>(
     isOwnProfile ? "to_claim" : "created",
@@ -64,12 +78,26 @@ export function ProfileClient({
   const performClaim = useCallback(
     async (
       claimId: string,
+      chain: string,
     ): Promise<{ ok: true; signature?: string } | { ok: false; error: string }> => {
+      const w = walletFor(chain);
+      if (!w.isConnected || !w.address) {
+        w.openConnectModal();
+        return {
+          ok: false,
+          error:
+            w.chain === "monad"
+              ? "Connect a Monad wallet to claim this reward."
+              : "Connect a Solana wallet to claim this reward.",
+        };
+      }
       try {
+        // Register the wallet for this chain so the payout routes to it.
+        await registerWalletForChain(w.address, w.chain, w.walletName);
         const res = await fetch(`/api/claims/${claimId}/claim-reward`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: connectedWallet }),
+          body: JSON.stringify({}),
         });
         const body = (await res.json()) as
           | { ok: true; tx?: { signature: string; mock: boolean } }
@@ -88,17 +116,13 @@ export function ProfileClient({
         };
       }
     },
-    [connectedWallet],
+    [walletFor],
   );
 
   const handleSingleClaim = useCallback(
-    async (claimId: string) => {
-      if (!isConnected) {
-        openConnectModal();
-        return;
-      }
+    async (claimId: string, chain: string) => {
       setClaiming((prev) => new Set(prev).add(claimId));
-      const result = await performClaim(claimId);
+      const result = await performClaim(claimId, chain);
       setClaiming((prev) => {
         const next = new Set(prev);
         next.delete(claimId);
@@ -107,15 +131,11 @@ export function ProfileClient({
       if (result.ok) router.refresh();
       else alert(result.error);
     },
-    [isConnected, openConnectModal, performClaim, router],
+    [performClaim, router],
   );
 
   /* ---- Claim all (sequential) ---------------------------------------- */
   const handleClaimAll = useCallback(async () => {
-    if (!isConnected) {
-      openConnectModal();
-      return;
-    }
     if (data.toClaim.length === 0) return;
 
     const initial: ClaimAllRow[] = data.toClaim.map((row) => ({
@@ -129,6 +149,9 @@ export function ProfileClient({
 
     for (let i = 0; i < initial.length; i++) {
       const claimId = initial[i].claimId;
+      // Each claim settles on its own chain (performClaim picks the right
+      // wallet + opens the right modal if that chain isn't connected).
+      const claimChain = data.toClaim[i].chain;
       setBulkRows((prev) =>
         prev
           ? prev.map((r) =>
@@ -136,7 +159,7 @@ export function ProfileClient({
             )
           : prev,
       );
-      const result = await performClaim(claimId);
+      const result = await performClaim(claimId, claimChain);
       setBulkRows((prev) =>
         prev
           ? prev.map((r) =>
@@ -151,7 +174,14 @@ export function ProfileClient({
           : prev,
       );
     }
-  }, [data.toClaim, isConnected, openConnectModal, performClaim]);
+  }, [data.toClaim, performClaim]);
+
+  // Per-chain connect prompts: show one only when there are unclaimed
+  // rewards on that chain and that chain's wallet isn't connected yet.
+  const needsSolWallet =
+    !sol.isConnected && data.toClaim.some((r) => r.chain !== "monad");
+  const needsMonadWallet =
+    !evm.isConnected && data.toClaim.some((r) => r.chain === "monad");
 
   const closeBulk = useCallback(() => {
     setBulkRows(null);
@@ -196,22 +226,19 @@ export function ProfileClient({
         createdCount={data.stats.createdCount}
       />
 
-      {/* Wallet-connect prompt — only shown on own profile when not yet
-          connected, so users know clicking Claim will prompt them. */}
-      {isOwnProfile && !isConnected && data.toClaim.length > 0 && (
-        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-accent-primary/40 bg-accent-soft px-4 py-3 text-small">
-          <span className="text-accent-text">
-            Connect a wallet (Phantom or Solflare) to claim your rewards.
-          </span>
-          <button
-            type="button"
-            onClick={openConnectModal}
-            className="press inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] bg-bg-base px-4 text-small font-medium text-accent-text hover:bg-bg-surface"
-          >
-            <Wallet className="size-3.5" strokeWidth={2.25} />
-            Connect
-          </button>
-        </div>
+      {/* Per-chain connect prompts — a hunter may have rewards waiting on
+          Solana and/or Monad; each needs its own wallet. */}
+      {isOwnProfile && needsSolWallet && (
+        <ConnectPrompt
+          label="Connect a Solana wallet (Phantom / Solflare) to claim your Solana rewards."
+          onConnect={sol.openConnectModal}
+        />
+      )}
+      {isOwnProfile && needsMonadWallet && (
+        <ConnectPrompt
+          label="Connect a Monad wallet to claim your Monad rewards."
+          onConnect={evm.openConnectModal}
+        />
       )}
 
       {/* Tabs — public view hides To-claim/Hunting tabs. */}
@@ -247,6 +274,28 @@ export function ProfileClient({
         rows={bulkRows ?? []}
         onClose={closeBulk}
       />
+    </div>
+  );
+}
+
+function ConnectPrompt({
+  label,
+  onConnect,
+}: {
+  label: string;
+  onConnect: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-accent-primary/40 bg-accent-soft px-4 py-3 text-small">
+      <span className="text-accent-text">{label}</span>
+      <button
+        type="button"
+        onClick={onConnect}
+        className="press inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] bg-bg-base px-4 text-small font-medium text-accent-text hover:bg-bg-surface"
+      >
+        <Wallet className="size-3.5" strokeWidth={2.25} />
+        Connect
+      </button>
     </div>
   );
 }

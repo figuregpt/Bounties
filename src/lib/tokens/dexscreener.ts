@@ -68,6 +68,12 @@ export function isValidSolanaMint(mint: string): boolean {
   return MINT_RE.test(mint.trim());
 }
 
+/** EVM contract-address shape check (0x + 40 hex). */
+const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+export function isValidEvmToken(addr: string): boolean {
+  return EVM_ADDR_RE.test(addr.trim());
+}
+
 type CacheEntry = { value: EnrichedToken; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 60_000;
@@ -75,13 +81,17 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 export async function enrichTokenByMint(
   mintAddress: string,
+  chain: "solana" | "monad" = "solana",
 ): Promise<EnrichedToken> {
   const mint = mintAddress.trim();
-  if (!isValidSolanaMint(mint)) {
-    throw new Error(`Invalid Solana mint format: ${mintAddress}`);
+  const valid =
+    chain === "monad" ? isValidEvmToken(mint) : isValidSolanaMint(mint);
+  if (!valid) {
+    throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
   }
 
-  const cached = cache.get(mint);
+  const cacheKey = `${chain}:${mint}`;
+  const cached = cache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) return cached.value;
 
@@ -114,12 +124,12 @@ export async function enrichTokenByMint(
     throw new TokenNotFoundError(mint);
   }
 
-  // Solana-only. DexScreener mixes chains in the response if the same
-  // mint exists on multiple — defensive even though Solana mints are
-  // chain-unique.
-  const solanaPairs = pairs.filter((p) => p.chainId === "solana");
-  if (solanaPairs.length === 0) {
-    throw new Error("Token exists on DexScreener but no Solana pair");
+  // DexScreener mixes chains in the response — keep only pairs on the
+  // chain we're enriching for. Our chain names ('solana' | 'monad') match
+  // DexScreener's chainId slugs exactly.
+  const chainPairs = pairs.filter((p) => p.chainId === chain);
+  if (chainPairs.length === 0) {
+    throw new Error(`Token exists on DexScreener but no ${chain} pair`);
   }
 
   // DexScreener returns every pair the mint participates in — both as
@@ -128,7 +138,7 @@ export async function enrichTokenByMint(
   // side of the pair (e.g. querying USDC's mint returns SOL/USDC,
   // BONK/USDC, etc — most-liquid baseToken is SOL/BONK/PUMP, not USDC).
   // Strict filter: keep only pairs where our mint IS the base.
-  const baseSidePairs = solanaPairs.filter((p) => {
+  const baseSidePairs = chainPairs.filter((p) => {
     const baseAddress = (
       p.baseToken as { address?: string } | undefined
     )?.address;
@@ -191,11 +201,11 @@ export async function enrichTokenByMint(
     priceChange24hPercent: pickNumber(best.priceChange, "h24"),
     dexScreenerPairAddress: pairAddress,
     dexScreenerUrl: pairAddress
-      ? `https://dexscreener.com/solana/${pairAddress}`
-      : `https://dexscreener.com/solana/${mint}`,
+      ? `https://dexscreener.com/${chain}/${pairAddress}`
+      : `https://dexscreener.com/${chain}/${mint}`,
   };
 
-  cache.set(mint, { value: enriched, expiresAt: now + TTL_MS });
+  cache.set(cacheKey, { value: enriched, expiresAt: now + TTL_MS });
   return enriched;
 }
 

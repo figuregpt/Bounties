@@ -247,6 +247,7 @@ function makeBounty(i: FixtureInput): BountyFeedItem {
     creatorUserId: "fixture-creator",
     slug: i.slug,
     status: "active",
+    chain: "solana",
     tweetId: "fixture-tweet",
     tweetUrl: "https://x.com/example/status/1",
     tweetAuthorTwitterId: null,

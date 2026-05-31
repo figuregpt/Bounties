@@ -1,10 +1,12 @@
 import "server-only";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tokens } from "@/lib/db/schema";
 import { getTokenDecimals } from "@/lib/solana/token-info";
+import { getChainAdapter, type Chain } from "@/lib/chains";
 import {
   enrichTokenByMint as fetchFromDexScreener,
+  isValidEvmToken,
   isValidSolanaMint,
   TokenLogoMissingError,
   TokenNotFoundError,
@@ -113,18 +115,21 @@ export {
  */
 export async function enrichToken(
   mintAddress: string,
-  opts: { forceRefresh?: boolean } = {},
+  opts: { forceRefresh?: boolean; chain?: Chain } = {},
 ): Promise<EnrichedTokenRow> {
-  if (!isValidSolanaMint(mintAddress)) {
-    throw new Error(`Invalid Solana mint format: ${mintAddress}`);
-  }
+  const chain = opts.chain ?? "solana";
   const mint = mintAddress.trim();
+  const validFormat =
+    chain === "monad" ? isValidEvmToken(mint) : isValidSolanaMint(mint);
+  if (!validFormat) {
+    throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
+  }
   const db = getDb();
 
   const [existing] = await db
     .select()
     .from(tokens)
-    .where(eq(tokens.mint, mint))
+    .where(and(eq(tokens.chain, chain), eq(tokens.mint, mint)))
     .limit(1);
 
   if (existing?.flaggedAsScam) {
@@ -181,6 +186,7 @@ export async function enrichToken(
     const upserted = await db
       .insert(tokens)
       .values({
+        chain,
         mint,
         symbol: canonical.symbol,
         name: canonical.name,
@@ -194,7 +200,7 @@ export async function enrichToken(
         isAdminVerified: true,
       })
       .onConflictDoUpdate({
-        target: tokens.mint,
+        target: [tokens.chain, tokens.mint],
         set: {
           symbol: canonical.symbol,
           name: canonical.name,
@@ -225,18 +231,23 @@ export async function enrichToken(
   // — decimals from the mint account, placeholder symbol/name/price.
   // Strict logo gating is also relaxed here (devnet test tokens rarely
   // have logos). Mainnet keeps the full DexScreener validation.
-  if (currentNetwork() === "devnet") {
+  // Devnet fallback is a Solana-network concept; Monad never takes it.
+  if (chain === "solana" && currentNetwork() === "devnet") {
     return enrichDevnetFallback(mint, existing);
   }
 
-  // Fetch fresh from DexScreener; if it throws, propagate so the route
-  // handler can map to a 4xx with a useful message.
-  const dex = await fetchFromDexScreener(mint);
+  // Fetch fresh from DexScreener (per chain); if it throws, propagate so
+  // the route handler can map to a 4xx with a useful message.
+  const dex = await fetchFromDexScreener(mint, chain);
 
-  // Decimals are stable so we only fetch once.
+  // Decimals are stable so we only fetch once — from the chain's adapter
+  // (Solana mint account vs EVM erc20.decimals()).
   let decimals = existing?.decimals ?? dex.decimals;
   if (decimals == null) {
-    decimals = await getTokenDecimals(mint);
+    decimals =
+      chain === "monad"
+        ? await getChainAdapter("monad").getTokenDecimals(mint)
+        : await getTokenDecimals(mint);
   }
 
   const category = (existing?.category as TokenCategory | null) ??
@@ -246,6 +257,7 @@ export async function enrichToken(
   const upserted = await db
     .insert(tokens)
     .values({
+      chain,
       mint,
       symbol: dex.symbol,
       name: dex.name,
@@ -261,7 +273,7 @@ export async function enrichToken(
       dexScreenerPairAddress: dex.dexScreenerPairAddress,
     })
     .onConflictDoUpdate({
-      target: tokens.mint,
+      target: [tokens.chain, tokens.mint],
       set: {
         symbol: dex.symbol,
         name: dex.name,
@@ -323,6 +335,7 @@ async function enrichDevnetFallback(
   const upserted = await db
     .insert(tokens)
     .values({
+      chain: "solana",
       mint,
       symbol: existing?.symbol ?? placeholderSymbol,
       name: existing?.name ?? placeholderName,
@@ -335,7 +348,7 @@ async function enrichDevnetFallback(
       firstSeenAt: existing?.firstSeenAt ?? now,
     })
     .onConflictDoUpdate({
-      target: tokens.mint,
+      target: [tokens.chain, tokens.mint],
       set: {
         decimals,
         jupiterPriceUpdatedAt: now,
@@ -380,8 +393,8 @@ function rowToEnriched(
     dexScreenerUrl:
       dex?.dexScreenerUrl ??
       (row.dexScreenerPairAddress
-        ? `https://dexscreener.com/solana/${row.dexScreenerPairAddress}`
-        : `https://dexscreener.com/solana/${row.mint}`),
+        ? `https://dexscreener.com/${row.chain}/${row.dexScreenerPairAddress}`
+        : `https://dexscreener.com/${row.chain}/${row.mint}`),
     isAdminVerified: row.isAdminVerified,
     flaggedAsScam: row.flaggedAsScam,
     firstSeenAt: row.firstSeenAt,
@@ -391,7 +404,10 @@ function rowToEnriched(
 }
 
 /** Increment usage counter when a bounty references this token. */
-export async function incrementTokenUsage(mintAddress: string): Promise<void> {
+export async function incrementTokenUsage(
+  mintAddress: string,
+  chain: Chain = "solana",
+): Promise<void> {
   const db = getDb();
   await db
     .update(tokens)
@@ -399,5 +415,5 @@ export async function incrementTokenUsage(mintAddress: string): Promise<void> {
       usageCount: sql`${tokens.usageCount} + 1`,
       bountyCount: sql`${tokens.bountyCount} + 1`,
     })
-    .where(eq(tokens.mint, mintAddress));
+    .where(and(eq(tokens.chain, chain), eq(tokens.mint, mintAddress)));
 }

@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Connection } from "@solana/web3.js";
 import { and, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
@@ -10,8 +9,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { verifyCronRequest } from "@/lib/cron/auth";
-import { rpcEndpoint } from "@/lib/solana/escrow";
-import { isMockSignature } from "@/lib/solana/treasury";
+import { getChainAdapter, isChain } from "@/lib/chains";
 import { publishEvent } from "@/lib/realtime/publisher";
 
 export const dynamic = "force-dynamic";
@@ -69,10 +67,11 @@ export async function POST(req: NextRequest) {
   const recovered: Array<{ id: string; sig: string }> = [];
   const released: Array<{ id: string; reason: string }> = [];
 
-  const connection = new Connection(rpcEndpoint(), "confirmed");
-
   for (const claim of stuck) {
     try {
+      // Settle the recovery on the claim's own chain.
+      const chain = isChain(claim.chain) ? claim.chain : "solana";
+      const adapter = getChainAdapter(chain);
       // Defense-in-depth: if the route handler crashed AFTER sendReward
       // resolved on-chain but BEFORE writing claim_tx_hash, the DB row
       // still has claim_tx_hash=null. sendReward writes an audit_log
@@ -108,27 +107,20 @@ export async function POST(req: NextRequest) {
       }
 
       if (txHash) {
-        // Mock signatures always "succeed" by definition (we never
-        // actually hit the RPC for them). The fact that the row got
-        // stuck in `claiming` means our code crashed between sendReward
-        // and the success UPDATE — recover by promoting.
-        let onChainOk = isMockSignature(txHash);
-        let confirmedAt: Date | null = null;
-        if (!onChainOk) {
-          const tx = await connection
-            .getParsedTransaction(txHash, {
-              commitment: "confirmed",
-              maxSupportedTransactionVersion: 0,
-            })
-            .catch(() => null);
-          if (tx && !tx.meta?.err) {
-            onChainOk = true;
-            confirmedAt = tx.blockTime ? new Date(tx.blockTime * 1000) : new Date();
-          }
-        }
+        // Mock signatures always "succeed" by definition (we never hit the
+        // RPC). Otherwise look up the receipt: found+success = mined ok,
+        // found+!success = mined-and-reverted (definitively failed), and a
+        // missing receipt is AMBIGUOUS (still pending / RPC hiccup).
+        const mock = adapter.isMockSignature(txHash);
+        const receipt = mock
+          ? { found: true, success: true }
+          : ((await adapter.getTxReceipt?.(txHash)) ?? {
+              found: false,
+              success: false,
+            });
 
-        if (onChainOk) {
-          const completedAt = confirmedAt ?? new Date();
+        if (receipt.found && receipt.success) {
+          const completedAt = new Date();
           const promoted = await db
             .update(claims)
             .set({
@@ -156,16 +148,33 @@ export async function POST(req: NextRequest) {
           }
           continue;
         }
+
+        if (!receipt.found) {
+          // AMBIGUOUS: the tx may still be in the mempool or the RPC just
+          // failed. Do NOT release — releasing would let the hunter
+          // re-claim and the treasury could double-pay if this tx actually
+          // lands. Leave it in `claiming` and retry next run.
+          console.warn(
+            `[recover-stuck-claims] claim ${claim.id} tx ${txHash} not yet resolvable — leaving in claiming for retry`,
+          );
+          continue;
+        }
+        // receipt.found && !receipt.success → mined and reverted. Fall
+        // through to release so the hunter can retry with a fresh tx.
       }
 
-      // No usable tx — release back to `verified` so the hunter retries.
+      // No tx hash, or the recorded tx definitively reverted — release back
+      // to `verified` so the hunter retries.
       const released_row = await db
         .update(claims)
         .set({
           status: "verified",
           claimAttemptedAt: null,
+          // Clear the dead hash so a retry isn't blocked by the partial
+          // unique index and the next run starts clean.
+          claimTxHash: null,
           claimTxError: txHash
-            ? "Stuck in claiming; on-chain tx not found"
+            ? "Stuck in claiming; on-chain tx reverted"
             : "Stuck in claiming; no tx hash recorded",
           updatedAt: new Date(),
         })
@@ -174,7 +183,7 @@ export async function POST(req: NextRequest) {
       if (released_row.length > 0) {
         released.push({
           id: claim.id,
-          reason: txHash ? "tx_not_found" : "no_tx_hash",
+          reason: txHash ? "tx_reverted" : "no_tx_hash",
         });
       }
     } catch (err) {

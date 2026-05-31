@@ -38,7 +38,10 @@ import { useHunt } from "@/hooks/useHunt";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
 import { useHolderCheck } from "@/hooks/useHolderCheck";
 import { useNow } from "@/hooks/useNow";
-import { useWalletConnection } from "@/hooks/useWalletConnection";
+import {
+  useBountyWallet,
+  registerWalletForChain,
+} from "@/hooks/useBountyWallet";
 import type {
   EligibilityRequirement,
   EligibilityResult,
@@ -93,11 +96,12 @@ export function BountyDetailClient({
   tokenInfo,
 }: Props) {
   const router = useRouter();
-  const {
-    address: connectedWallet,
-    isConnected,
-    openConnectModal,
-  } = useWalletConnection();
+  // Chain-aware wallet: a Monad bounty pays a Monad address, a Solana
+  // bounty pays a Solana address. Pick the right one by bounty.chain.
+  const wallet = useBountyWallet(bounty.chain);
+  const connectedWallet = wallet.address;
+  const isConnected = wallet.isConnected;
+  const openConnectModal = wallet.openConnectModal;
   const [huntersOpen, setHuntersOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [huntOpen, setHuntOpen] = useState(false);
@@ -116,6 +120,7 @@ export function BountyDetailClient({
   const holderCheck = useHolderCheck({
     requirement: holderReq,
     wallet: connectedWallet,
+    chain: bounty.chain,
   });
   const effectiveEligibility = useMemo(
     () => buildEffectiveEligibility(eligibility, holderReq, holderCheck),
@@ -145,7 +150,9 @@ export function BountyDetailClient({
     // no sticky DB binding needed.
     if (!isConnected || !connectedWallet) {
       setActionMessage(
-        "Connect a wallet (Phantom or Solflare) — that's where your reward will land.",
+        wallet.chain === "monad"
+          ? "Connect a Monad wallet — that's where your reward will land."
+          : "Connect a Solana wallet (Phantom or Solflare) — that's where your reward will land.",
       );
       openConnectModal();
       return;
@@ -153,12 +160,19 @@ export function BountyDetailClient({
     setClaimingReward(true);
     setActionMessage("Sending reward to your wallet…");
     try {
+      // Register the connected wallet for this chain so the payout (which
+      // reads user_wallets by chain) routes to the wallet shown here.
+      await registerWalletForChain(
+        connectedWallet,
+        wallet.chain,
+        wallet.walletName,
+      );
       const res = await fetch(
         `/api/claims/${effectiveClaim.id}/claim-reward`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: connectedWallet }),
+          body: JSON.stringify({}),
         },
       );
       const body = (await res.json()) as {
@@ -394,9 +408,27 @@ function Hero({
           />
         </motion.div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-[32px] font-medium leading-tight tracking-tight text-text-primary">
-            {bounty.rewardTokenSymbol} bounty
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[32px] font-medium leading-tight tracking-tight text-text-primary">
+              {bounty.rewardTokenSymbol} bounty
+            </h1>
+            <span
+              className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-bg-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
+              title={
+                bounty.chain === "monad"
+                  ? "Settles on Monad"
+                  : "Settles on Solana"
+              }
+            >
+              <span
+                className="size-1.5 rounded-full"
+                style={{
+                  background: bounty.chain === "monad" ? "#836EF9" : "#14F195",
+                }}
+              />
+              {bounty.chain === "monad" ? "Monad" : "Solana"}
+            </span>
+          </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-small text-text-secondary">
             <span>
               by{" "}
@@ -776,6 +808,7 @@ function ActionPanel({
               cta={uiState.primaryCta}
               claimingReward={claimingReward}
               onPrimary={onPrimary}
+              chain={bounty.chain}
             />
           )}
           {uiState.secondaryCta && (
@@ -914,12 +947,16 @@ function PrimaryClaimCta({
   cta,
   claimingReward,
   onPrimary,
+  chain,
 }: {
   cta: CtaConfig;
   claimingReward: boolean;
   onPrimary: (cta: CtaConfig) => void;
+  chain: string;
 }) {
-  const { isConnected, openConnectModal } = useWalletConnection();
+  const wallet = useBountyWallet(chain);
+  const isConnected = wallet.isConnected;
+  const openConnectModal = wallet.openConnectModal;
   const needsWallet = cta.action === "claim_reward" && !isConnected;
 
   if (needsWallet) {

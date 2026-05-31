@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   const candidates = await db
-    .select({ mint: tokens.mint })
+    .select({ mint: tokens.mint, chain: tokens.chain })
     .from(tokens)
     .where(
       and(
@@ -62,7 +62,12 @@ export async function POST(req: NextRequest) {
   const errors: Array<{ mint: string; error: string }> = [];
   for (const row of candidates) {
     try {
-      await enrichToken(row.mint, { forceRefresh: true });
+      // Enrich on the token's OWN chain — a Monad ERC-20 must not be sent
+      // down the Solana/DexScreener-solana path (it would throw + go stale).
+      await enrichToken(row.mint, {
+        chain: row.chain === "monad" ? "monad" : "solana",
+        forceRefresh: true,
+      });
       refreshed += 1;
     } catch (err) {
       errors.push({

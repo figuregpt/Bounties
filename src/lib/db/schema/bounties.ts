@@ -137,6 +137,11 @@ export const bounties = pgTable(
     slug: text("slug").notNull().unique(),
     status: text("status").notNull().default("draft"),
 
+    /** Settlement chain. Routes escrow / verify / payout / refund through
+     *  the matching ChainAdapter (src/lib/chains). Every pre-Monad row is
+     *  'solana'; new bounties stamp the creator's selected chain. */
+    chain: text("chain").notNull().default("solana"),
+
     /* Twitter target --------------------------------------------------- */
     tweetId: text("tweet_id").notNull(),
     tweetUrl: text("tweet_url").notNull(),
@@ -304,15 +309,16 @@ export const bounties = pgTable(
       .on(table.isFeatured, table.featuredUntil)
       .where(sql`${table.isFeatured} = true`),
     index("bounties_slug_idx").on(table.slug),
-    // Replay protection on escrow: a given Solana tx signature can
-    // never anchor more than one bounty. Partial unique so draft rows
-    // (NULL escrow_tx_hash) coexist freely.
+    // Replay protection on escrow: a given tx hash can never anchor more
+    // than one bounty. Keyed on (chain, hash) because a Solana base58
+    // signature and a Monad 0x hash share this text column and could
+    // otherwise collide. Partial unique so draft rows (NULL hash) coexist.
     uniqueIndex("bounties_escrow_tx_hash_unique")
-      .on(table.escrowTxHash)
+      .on(table.chain, table.escrowTxHash)
       .where(sql`${table.escrowTxHash} IS NOT NULL`),
     // Replay protection on refund: same as above for refund txs.
     uniqueIndex("bounties_refund_tx_hash_unique")
-      .on(table.refundTxHash)
+      .on(table.chain, table.refundTxHash)
       .where(sql`${table.refundTxHash} IS NOT NULL`),
   ],
 );

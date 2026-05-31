@@ -9,6 +9,7 @@ import {
   TokenNotFoundError,
   TokenPriceUnavailableError,
 } from "@/lib/tokens/enrichment";
+import { isValidEvmToken } from "@/lib/tokens/dexscreener";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,7 +32,8 @@ export const runtime = "nodejs";
  */
 
 const BodySchema = z.object({
-  mintAddress: z.string().min(32).max(48),
+  mintAddress: z.string().min(20).max(64),
+  chain: z.enum(["solana", "monad"]).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -61,11 +63,19 @@ export async function POST(req: NextRequest) {
     );
   }
   const mintAddress = parsed.data.mintAddress.trim();
-  if (!isValidSolanaMint(mintAddress)) {
+  const chain = parsed.data.chain ?? "solana";
+  const validFormat =
+    chain === "monad"
+      ? isValidEvmToken(mintAddress)
+      : isValidSolanaMint(mintAddress);
+  if (!validFormat) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Doesn't look like a Solana token address",
+        error:
+          chain === "monad"
+            ? "Doesn't look like a Monad (0x) token address"
+            : "Doesn't look like a Solana token address",
         errorCode: "invalid_mint",
       },
       { status: 400 },
@@ -73,7 +83,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const enriched = await enrichToken(mintAddress);
+    const enriched = await enrichToken(mintAddress, { chain });
     return NextResponse.json({ ok: true, token: enriched });
   } catch (err) {
     if (err instanceof TokenFlaggedError) {

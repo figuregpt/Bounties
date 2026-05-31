@@ -7,8 +7,9 @@ import {
   claims,
   notifications,
   users,
+  userWallets,
 } from "@/lib/db/schema";
-import { sendReward } from "@/lib/solana/treasury";
+import { getChainAdapter, isChain } from "@/lib/chains";
 import type { Bounty } from "@/types/database";
 
 /**
@@ -81,6 +82,9 @@ export async function processUnclaimedRefund(
     return { kind: "noop", reason: "Pool fully distributed" };
   }
 
+  const chain = isChain(bounty.chain) ? bounty.chain : "solana";
+  const adapter = getChainAdapter(chain);
+
   const [creator] = await db
     .select({
       id: users.id,
@@ -90,12 +94,29 @@ export async function processUnclaimedRefund(
     .from(users)
     .where(eq(users.id, bounty.creatorUserId))
     .limit(1);
-  if (!creator?.walletAddress) {
-    return { kind: "failed", error: "Creator wallet not on file" };
+  if (!creator) {
+    return { kind: "failed", error: "Creator not found" };
   }
 
-  const tx = await sendReward({
-    toWalletAddress: creator.walletAddress,
+  // The refund must settle on the bounty's chain — resolve the creator's
+  // wallet for THAT chain (Solana falls back to the legacy column). A
+  // Monad bounty refunds to the creator's Monad address, never Solana.
+  const [creatorWalletRow] = await db
+    .select({ address: userWallets.address })
+    .from(userWallets)
+    .where(
+      and(eq(userWallets.userId, creator.id), eq(userWallets.chain, chain)),
+    )
+    .limit(1);
+  const refundWallet =
+    creatorWalletRow?.address ??
+    (chain === "solana" ? creator.walletAddress : null);
+  if (!refundWallet) {
+    return { kind: "failed", error: `Creator ${chain} wallet not on file` };
+  }
+
+  const tx = await adapter.sendReward({
+    toWalletAddress: refundWallet,
     tokenMint: bounty.rewardTokenMint,
     tokenSymbol: bounty.rewardTokenSymbol,
     amount: refundAmount,
@@ -163,7 +184,7 @@ export async function processUnclaimedRefund(
         amount: refundAmount,
         tokenMint: bounty.rewardTokenMint,
         tokenSymbol: bounty.rewardTokenSymbol,
-        recipient: creator.walletAddress,
+        recipient: refundWallet,
         verifiedClaims: verifiedCount,
         totalPool,
       },

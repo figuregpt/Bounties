@@ -177,6 +177,8 @@ export function CreateFormShowcase() {
                   : null,
               });
             }}
+            chain="solana"
+            onChainChange={() => {}}
             onPerHunterChange={(v) => patch({ rewardPerHunter: v })}
             onMaxHuntersChange={(v) => patch({ maxHunters: v })}
             onModeChange={setRewardMode}

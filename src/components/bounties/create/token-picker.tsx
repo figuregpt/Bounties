@@ -64,19 +64,30 @@ export type QuickPickToken = {
 type Props = {
   selected: SelectedToken | null;
   onChange: (token: SelectedToken | null) => void;
+  /** Settlement chain — drives address format (base58 vs 0x), the enrich
+   *  call, the placeholder, and whether the Solana quick-picks show. */
+  chain?: "solana" | "monad";
 };
 
 const MINT_LIKE_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+/** Canonical Monad MON token (DexScreener labels it symbol "MON" with a
+ *  live price). Enriching it yields symbol "MON", which the create flow
+ *  settles as NATIVE MON (value send), not an ERC-20 transfer. */
+const MONAD_MON_ADDRESS = "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A";
 
-export function TokenPicker({ selected, onChange }: Props) {
+export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
   const [input, setInput] = useState("");
   const [picks, setPicks] = useState<QuickPickToken[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
-  // Fetch quick picks once on mount.
+  // Fetch quick picks once on mount. Solana-only for now — the chip row
+  // is a curated Solana set (USDC/SOL/BNTY); Monad creators paste a 0x
+  // address directly.
   useEffect(() => {
+    if (chain !== "solana") return;
     let cancelled = false;
     void fetch("/api/tokens/quick-picks", { cache: "no-store" })
       .then((r) => r.json())
@@ -92,7 +103,7 @@ export function TokenPicker({ selected, onChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [chain]);
 
   const enrich = async (mint: string) => {
     setLoading(true);
@@ -101,7 +112,7 @@ export function TokenPicker({ selected, onChange }: Props) {
       const res = await fetch("/api/tokens/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mintAddress: mint }),
+        body: JSON.stringify({ mintAddress: mint, chain }),
       });
       const body = (await res.json()) as {
         ok: boolean;
@@ -136,7 +147,8 @@ export function TokenPicker({ selected, onChange }: Props) {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     const trimmed = input.trim();
     if (!trimmed) return;
-    if (!MINT_LIKE_RE.test(trimmed)) return;
+    const pattern = chain === "monad" ? EVM_ADDR_RE : MINT_LIKE_RE;
+    if (!pattern.test(trimmed)) return;
     debounceRef.current = window.setTimeout(() => {
       void enrich(trimmed);
     }, 500);
@@ -144,7 +156,7 @@ export function TokenPicker({ selected, onChange }: Props) {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input]);
+  }, [input, chain]);
 
   if (selected) {
     return (
@@ -168,7 +180,11 @@ export function TokenPicker({ selected, onChange }: Props) {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Paste contract address (e.g. EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm)"
+          placeholder={
+            chain === "monad"
+              ? "Paste Monad token address (0x…)"
+              : "Paste contract address (e.g. EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm)"
+          }
           className="pl-9"
           aria-label="Token contract address"
         />
@@ -184,6 +200,28 @@ export function TokenPicker({ selected, onChange }: Props) {
         <p className="rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2 text-small text-danger">
           {error}
         </p>
+      )}
+
+      {chain === "monad" && (
+        <div>
+          <p className="mb-2 text-caption uppercase tracking-wider text-text-tertiary">
+            Quick picks
+          </p>
+          <button
+            type="button"
+            onClick={() => void enrich(MONAD_MON_ADDRESS)}
+            disabled={loading}
+            className={cn(
+              "press inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border-default bg-bg-elevated px-3 py-1.5 text-small text-text-secondary transition-colors hover:border-accent-primary/40 hover:text-text-primary disabled:cursor-progress disabled:opacity-60",
+            )}
+          >
+            <span
+              className="size-[18px] rounded-full"
+              style={{ background: "#836EF9" }}
+            />
+            Native MON
+          </button>
+        </div>
       )}
 
       {picks.length > 0 && (

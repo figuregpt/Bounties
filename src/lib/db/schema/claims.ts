@@ -47,6 +47,10 @@ export const claims = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     status: text("status").notNull().default("awaiting_action"),
 
+    /** Frozen from bounty.chain at hunt time (like rewardTokenMint).
+     *  Drives which ChainAdapter the payout + stuck-claim recovery use. */
+    chain: text("chain").notNull().default("solana"),
+
     /* Lifecycle ------------------------------------------------------- */
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -155,11 +159,12 @@ export const claims = pgTable(
       table.actionClaimedAt,
     ),
     index("claims_tx_hash_idx").on(table.claimTxHash),
-    // Replay protection: a given Solana tx signature can never be
-    // recorded against more than one claim. Partial unique so NULL
-    // (the default for pre-claim rows) doesn't collide.
+    // Replay protection: a given tx hash can never be recorded against
+    // more than one claim. Keyed on (chain, hash) so a Solana signature
+    // and a Monad 0x hash can't collide in this shared text column.
+    // Partial unique so NULL (the default for pre-claim rows) doesn't.
     uniqueIndex("claims_claim_tx_hash_unique")
-      .on(table.claimTxHash)
+      .on(table.chain, table.claimTxHash)
       .where(sql`${table.claimTxHash} IS NOT NULL`),
     index("claims_status_attempted_idx").on(
       table.status,

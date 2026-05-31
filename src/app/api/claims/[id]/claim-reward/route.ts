@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, eq, sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
@@ -8,19 +7,13 @@ import {
   claims,
   platformRevenue,
   users,
+  userWallets,
 } from "@/lib/db/schema";
-import { sendReward } from "@/lib/solana/treasury";
 import { getRevenueWalletPublicKeyOrNull } from "@/lib/solana/env";
-import { isValidSolanaWallet } from "@/lib/solana/verify-tx";
+import { getChainAdapter, isChain } from "@/lib/chains";
 import { updateClaimStatus } from "@/lib/bounties/claim-status";
 import { publishEvent } from "@/lib/realtime/publisher";
 import { recordActivity } from "@/lib/realtime/activity";
-
-const BodySchema = z
-  .object({
-    walletAddress: z.string().min(32).max(48).optional(),
-  })
-  .optional();
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -54,7 +47,7 @@ export const runtime = "nodejs";
 const PLATFORM_FEE_BPS = 500;
 
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
@@ -66,23 +59,10 @@ export async function POST(
     );
   }
 
-  // Hunter can pass the wallet they want the reward to land in. We
-  // prefer this over the saved `user.walletAddress` so a single
-  // account can pay out into different wallets across claims (and
-  // multiple accounts can share one wallet without DB UNIQUE
-  // collisions). Falls back to the saved address for legacy callers
-  // that don't include the body.
-  let bodyWallet: string | null = null;
-  try {
-    const raw = await req.json().catch(() => null);
-    const parsed = BodySchema.safeParse(raw);
-    if (parsed.success && parsed.data?.walletAddress) {
-      bodyWallet = parsed.data.walletAddress;
-    }
-  } catch {
-    /* no body / not JSON — fall through to saved wallet */
-  }
-
+  // Payout destination is resolved from the user's saved wallet for the
+  // bounty's chain (below) — NOT from a request-body address. Sending only
+  // to the session-owner's registered wallet closes the CSRF-redirect hole
+  // without needing a signature challenge yet.
   const db = getDb();
 
   /* ---- Read claim + bounty in one trip ----------------------------- */
@@ -205,13 +185,25 @@ export async function POST(
     );
   }
 
-  /* ---- Recipient resolution ---------------------------------------- */
-  // Prefer the wallet the hunter sent in the request body (the live
-  // wallet-adapter address). Fall back to whatever's saved on the
-  // user row. Reward sends to wherever the hunter is connected RIGHT
-  // NOW — no need to keep the user → wallet binding sticky.
-  const recipientWallet = bodyWallet ?? user.walletAddress;
-  if (!recipientWallet || !isValidSolanaWallet(recipientWallet)) {
+  /* ---- Recipient resolution (per chain) ---------------------------- */
+  // The reward settles on the bounty's chain, so the recipient must be the
+  // hunter's wallet ON THAT CHAIN. Resolved from user_wallets (userId,
+  // chain); Solana falls back to the legacy users.walletAddress during the
+  // migration window. A Monad bounty can only pay a Monad address — if the
+  // hunter only connected Solana, they get a clean "connect a Monad wallet"
+  // message instead of a silent address rejection.
+  const chain = isChain(claim.chain) ? claim.chain : "solana";
+  const adapter = getChainAdapter(chain);
+
+  const walletRows = await db
+    .select({ address: userWallets.address })
+    .from(userWallets)
+    .where(and(eq(userWallets.userId, user.id), eq(userWallets.chain, chain)))
+    .limit(1);
+  const recipientWallet =
+    walletRows[0]?.address ?? (chain === "solana" ? user.walletAddress : null);
+
+  if (!recipientWallet || !adapter.isValidWallet(recipientWallet)) {
     // Roll the claim back so the hunter can retry once they connect.
     await db
       .update(claims)
@@ -224,7 +216,10 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        error: "Connect a wallet so we know where to send the reward",
+        error:
+          chain === "monad"
+            ? "Connect a Monad wallet so we know where to send the reward"
+            : "Connect a wallet so we know where to send the reward",
         errorCode: "wallet_not_connected",
       },
       { status: 409 },
@@ -240,14 +235,18 @@ export async function POST(
   const feeAmount = (grossReward * PLATFORM_FEE_BPS) / 10_000;
   const netReward = grossReward - feeAmount;
 
-  /* ---- Send the reward --------------------------------------------- */
-  // sendReward validates recipient (on-curve), pre-flights treasury
-  // balance, then retries up to 3x with backoff. When the revenue
-  // wallet is configured, the 5% fee is co-transferred in the same
-  // on-chain tx so payout and fee collection are atomic — no risk of
-  // sending the net reward but leaving the fee stuck in treasury.
-  const revenueWallet = getRevenueWalletPublicKeyOrNull();
-  const tx = await sendReward({
+  /* ---- Send the reward (via the chain's adapter) ------------------- */
+  // The adapter validates the recipient, pre-flights the treasury balance,
+  // and settles the payout. Fee handling differs by chain:
+  //   • Solana — when a revenue wallet is set, the 5% fee is co-transferred
+  //     in the SAME tx so payout + fee collection are atomic.
+  //   • Monad — a plain EVM tx has one recipient, so the fee is NOT moved
+  //     here; it stays in the treasury (collected at escrow) and a sweep
+  //     cron forwards accrued fees to the revenue wallet. The adapter
+  //     ignores the `fee` field.
+  const revenueWallet =
+    chain === "solana" ? getRevenueWalletPublicKeyOrNull() : null;
+  const tx = await adapter.sendReward({
     toWalletAddress: recipientWallet,
     tokenMint: claim.rewardTokenMint,
     tokenSymbol: claim.rewardTokenSymbol,

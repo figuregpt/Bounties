@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { bounties, platformRevenue } from "@/lib/db/schema";
+import { bounties, platformRevenue, userWallets } from "@/lib/db/schema";
 import {
   escrowMode,
   toRawAmount,
@@ -14,7 +14,11 @@ import {
   getRevenueWalletPublicKeyOrNull,
   getTreasuryPublicKeyOrNull,
 } from "@/lib/solana/env";
-import { verifyEscrowTx } from "@/lib/solana/verify-tx";
+import { getChainAdapter, isChain } from "@/lib/chains";
+import {
+  getMonadTreasuryAddressOrNull,
+  monadEscrowMode,
+} from "@/lib/chains/evm/env";
 import {
   BOUNTY_CREATION_FEE_USD,
   DURATION_HOURS_OPTIONS,
@@ -124,8 +128,11 @@ export async function POST(
   // Devnet bypass: most devnet tokens have no tracked price ($0 in our
   // table) so the divide would explode. Skip the fee entirely on
   // devnet — no real revenue at stake during test launches.
-  const tokenInfo = await getTokenInfo(bounty.rewardTokenMint);
-  const isDevnet = currentNetwork() === "devnet";
+  const tokenInfo = await getTokenInfo(bounty.rewardTokenMint, bounty.chain);
+  // Devnet is a SOLANA-network concept — never zero the Monad fee through
+  // it (the Monad client always sends the fee, so the server must record
+  // it). Reserve the devnet fee-skip for Solana.
+  const isDevnet = bounty.chain === "solana" && currentNetwork() === "devnet";
   if (!isDevnet && (!tokenInfo?.priceUsd || tokenInfo.priceUsd <= 0)) {
     return NextResponse.json(
       {
@@ -143,28 +150,35 @@ export async function POST(
       : BOUNTY_CREATION_FEE_USD / tokenInfo.priceUsd;
   const totalEscrowAmount = Number(bounty.totalPool) + creationFeeAmount;
 
-  /* ---- Escrow verification ----------------------------------------- */
-  const mode = escrowMode();
+  /* ---- Escrow verification (per chain) ----------------------------- */
+  const chain = isChain(bounty.chain) ? bounty.chain : "solana";
+  const adapter = getChainAdapter(chain);
+  // Native-currency sentinel differs per chain (SOL vs MON).
+  const isNativeReward =
+    chain === "monad"
+      ? bounty.rewardTokenSymbol === "MON"
+      : bounty.rewardTokenSymbol === "SOL";
+  // Treasury + escrow mode resolve per chain.
+  const treasury =
+    chain === "monad"
+      ? getMonadTreasuryAddressOrNull()
+      : getTreasuryPublicKeyOrNull();
+  const mode = chain === "monad" ? monadEscrowMode() : escrowMode();
+
   let escrowTxHash: string | null = null;
   let escrowConfirmedAt: Date = new Date();
   const onChainStatus = "escrowed" as const;
 
   if (mode === "mock") {
-    if (parsed.data.escrowTxSignature) {
-      escrowTxHash = parsed.data.escrowTxSignature;
-    } else {
-      escrowTxHash = `mock_${Date.now().toString(36)}_${Math.random()
+    escrowTxHash =
+      parsed.data.escrowTxSignature ??
+      `mock_${Date.now().toString(36)}_${Math.random()
         .toString(36)
         .slice(2, 10)}`;
-    }
   } else {
-    const treasury = getTreasuryPublicKeyOrNull();
     if (!treasury) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Treasury wallet not configured (set TREASURY_WALLET_PUBLIC_KEY)",
-        },
+        { ok: false, error: `Treasury wallet not configured for ${chain}` },
         { status: 503 },
       );
     }
@@ -174,56 +188,75 @@ export async function POST(
         { status: 400 },
       );
     }
-    if (!user.walletAddress) {
+
+    // Creator's wallet on the bounty's chain (who funded the escrow).
+    // Resolved from user_wallets; Solana falls back to the legacy column.
+    const [creatorWalletRow] = await db
+      .select({ address: userWallets.address })
+      .from(userWallets)
+      .where(and(eq(userWallets.userId, user.id), eq(userWallets.chain, chain)))
+      .limit(1);
+    const creatorWallet =
+      creatorWalletRow?.address ??
+      (chain === "solana" ? user.walletAddress : null);
+    if (!creatorWallet) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Connect a Solana wallet before launching a bounty",
+          error: `Connect a ${chain === "monad" ? "Monad" : "Solana"} wallet before launching a bounty`,
           errorCode: "wallet_not_connected",
         },
         { status: 409 },
       );
     }
-    // Two-destination flow: when REVENUE_WALLET_PUBLIC_KEY is set, the
-    // pool and creation-fee land in different wallets. We tell the
-    // verifier both expected amounts; it falls back to the legacy
-    // single-transfer mode automatically if a stale browser tab sent
-    // the combined amount to treasury.
-    const revenueWallet = getRevenueWalletPublicKeyOrNull();
+
     const poolNumeric = Number(bounty.totalPool);
-    const expectedPoolRaw =
-      bounty.rewardTokenSymbol === "SOL"
-        ? solToLamports(poolNumeric)
-        : toRawAmount(poolNumeric, bounty.rewardTokenDecimals);
+    const toRaw = (n: number) =>
+      chain === "solana" && isNativeReward
+        ? solToLamports(n)
+        : toRawAmount(n, bounty.rewardTokenDecimals);
+    const expectedPoolRaw = toRaw(poolNumeric);
     const expectedFeeRaw =
-      creationFeeAmount > 0
-        ? bounty.rewardTokenSymbol === "SOL"
-          ? solToLamports(creationFeeAmount)
-          : toRawAmount(creationFeeAmount, bounty.rewardTokenDecimals)
-        : BigInt(0);
-    const expectedMint =
-      bounty.rewardTokenSymbol === "SOL" ? null : bounty.rewardTokenMint;
+      creationFeeAmount > 0 ? toRaw(creationFeeAmount) : BigInt(0);
+    const expectedMint = isNativeReward ? null : bounty.rewardTokenMint;
 
-    // When fee separation is enabled, treasury should only receive the
-    // pool. Without it, treasury receives the combined amount as before.
-    const treasuryExpected =
-      revenueWallet && creationFeeAmount > 0
-        ? expectedPoolRaw
-        : expectedPoolRaw + expectedFeeRaw;
+    // Fee routing:
+    //  • Solana + revenue wallet → pool to treasury, fee to revenue (split).
+    //  • Solana w/o revenue → combined into one treasury transfer (legacy).
+    //  • Monad → ALWAYS combined to treasury (a plain EVM tx has one
+    //    recipient); fee stays in treasury and is swept to revenue later.
+    const revenueWallet =
+      chain === "solana" ? getRevenueWalletPublicKeyOrNull() : null;
+    const splitFee = !!revenueWallet && creationFeeAmount > 0;
 
-    const result = await verifyEscrowTx({
+    let verifyExpectedAmount: bigint;
+    let verifyExpectedFee:
+      | { recipientWallet: string; amount: bigint }
+      | undefined;
+    if (chain === "monad") {
+      verifyExpectedAmount = expectedPoolRaw;
+      verifyExpectedFee =
+        expectedFeeRaw > BigInt(0)
+          ? { recipientWallet: treasury, amount: expectedFeeRaw }
+          : undefined;
+    } else if (splitFee) {
+      verifyExpectedAmount = expectedPoolRaw;
+      verifyExpectedFee = {
+        recipientWallet: revenueWallet!,
+        amount: expectedFeeRaw,
+      };
+    } else {
+      verifyExpectedAmount = expectedPoolRaw + expectedFeeRaw;
+      verifyExpectedFee = undefined;
+    }
+
+    const result = await adapter.verifyEscrowTx({
       signature: parsed.data.escrowTxSignature,
-      expectedFromWallet: user.walletAddress,
+      expectedFromWallet: creatorWallet,
       expectedTreasuryWallet: treasury,
-      expectedAmount: treasuryExpected,
+      expectedAmount: verifyExpectedAmount,
       expectedMint,
-      expectedFee:
-        revenueWallet && creationFeeAmount > 0
-          ? {
-              recipientWallet: revenueWallet,
-              amount: expectedFeeRaw,
-            }
-          : undefined,
+      expectedFee: verifyExpectedFee,
     });
     if (!result.ok) {
       // amount_too_low usually means the token price moved between
@@ -275,7 +308,8 @@ export async function POST(
       escrowAmount: totalEscrowAmount.toString(),
       creationFeeAmount: creationFeeAmount.toString(),
       creationFeeAmountUsd: BOUNTY_CREATION_FEE_USD.toFixed(6),
-      treasuryAddress: getTreasuryPublicKeyOrNull(),
+      // Stamp the chain-specific treasury that actually received the escrow.
+      treasuryAddress: treasury,
       onChainStatus,
       updatedAt: now,
     })

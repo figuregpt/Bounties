@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -17,7 +18,11 @@ export const tokens = pgTable(
   "tokens",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    mint: text("mint").notNull().unique(),
+    /** Chain this token lives on. The same symbol (e.g. USDC) exists on
+     *  both Solana and Monad with different addresses, so `mint` alone is
+     *  no longer unique — see the composite (chain, mint) index below. */
+    chain: text("chain").notNull().default("solana"),
+    mint: text("mint").notNull(),
     symbol: text("symbol").notNull(),
     name: text("name").notNull(),
     decimals: integer("decimals").notNull(),
@@ -67,6 +72,9 @@ export const tokens = pgTable(
     usageCount: integer("usage_count").notNull().default(0),
   },
   (table) => [
+    // A token is identified by (chain, mint) — the same address space is
+    // not shared across chains, and the same symbol recurs per chain.
+    uniqueIndex("tokens_chain_mint_unique").on(table.chain, table.mint),
     index("tokens_symbol_idx").on(table.symbol),
     index("tokens_category_whitelist_idx").on(
       table.category,
