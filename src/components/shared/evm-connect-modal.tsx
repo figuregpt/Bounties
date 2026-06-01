@@ -5,11 +5,14 @@ import { useAccount, useConnect } from "wagmi";
 import { X } from "lucide-react";
 
 /**
- * Wallet-selection modal for the Monad (EVM) stack — the counterpart to
- * the Solana wallet-adapter modal. wagmi's EIP-6963 discovery means
- * `connectors` already lists every injected wallet the browser exposes
- * (MetaMask, Rabby, Phantom-EVM, …), so we just render them and connect
- * on pick instead of auto-connecting the first one.
+ * Wallet-selection modal for the EVM stack (Monad + Base) — the
+ * counterpart to the Solana wallet-adapter modal. One injected connection
+ * serves every EVM chain; the per-tx chain is switched with
+ * `switchChainAsync`, so a single connect here covers both networks.
+ * wagmi's EIP-6963 discovery means `connectors` already lists every
+ * injected wallet the browser exposes (MetaMask, Rabby, Phantom-EVM, …),
+ * so we just render them and connect on pick instead of auto-connecting
+ * the first one.
  */
 export function EvmConnectModal({
   open,
@@ -48,9 +51,14 @@ export function EvmConnectModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-h3 font-medium leading-tight text-text-primary">
-            Connect a wallet on Monad to continue
-          </h2>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-medium leading-tight text-text-primary">
+              Connect an EVM wallet to continue
+            </h2>
+            <p className="mt-1 text-caption text-text-tertiary">
+              One wallet works for both Monad and Base.
+            </p>
+          </div>
           <button
             type="button"
             aria-label="Close"

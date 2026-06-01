@@ -101,8 +101,9 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
               }}
             />
             <WalletStatus
-              label="Monad"
-              dot="#836EF9"
+              label="EVM"
+              hint="Monad · Base"
+              dot="#6366F1"
               connectedAddress={evm.address}
               isConnected={evm.isConnected}
               onConnect={evm.openConnectModal}
@@ -145,6 +146,7 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
  */
 function WalletStatus({
   label,
+  hint,
   dot,
   connectedAddress,
   isConnected,
@@ -152,6 +154,9 @@ function WalletStatus({
   onDisconnect,
 }: {
   label: string;
+  /** Optional clarifier shown beside the label — e.g. the EVM row serves
+   *  both Monad and Base from one connection ("Monad · Base"). */
+  hint?: string;
   dot: string;
   connectedAddress: string | null;
   isConnected: boolean;
@@ -164,7 +169,7 @@ function WalletStatus({
         <span
           className="size-1.5 shrink-0 rounded-full"
           style={{ background: dot }}
-          title={label}
+          title={hint ? `${label} · ${hint}` : label}
         />
         <WalletPill address={connectedAddress} />
         <button
@@ -197,6 +202,11 @@ function WalletStatus({
       />
       <Wallet className="size-3" strokeWidth={2.25} />
       <span>Connect {label} wallet</span>
+      {hint && (
+        <span className="text-[10px] font-normal text-text-tertiary">
+          {hint}
+        </span>
+      )}
     </button>
   );
 }
