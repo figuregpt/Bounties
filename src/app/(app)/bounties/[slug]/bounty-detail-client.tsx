@@ -38,6 +38,8 @@ import { useHunt } from "@/hooks/useHunt";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
 import { useHolderCheck } from "@/hooks/useHolderCheck";
 import { useNow } from "@/hooks/useNow";
+import { isEvmChain, chainLabel } from "@/lib/chains/evm/config";
+import { chainLogo } from "@/lib/chains/logos";
 import {
   useBountyWallet,
   registerWalletForChain,
@@ -150,8 +152,8 @@ export function BountyDetailClient({
     // no sticky DB binding needed.
     if (!isConnected || !connectedWallet) {
       setActionMessage(
-        wallet.chain === "monad"
-          ? "Connect a Monad wallet — that's where your reward will land."
+        isEvmChain(wallet.chain)
+          ? `Connect a ${chainLabel(wallet.chain)} wallet — that's where your reward will land.`
           : "Connect a Solana wallet (Phantom or Solflare) — that's where your reward will land.",
       );
       openConnectModal();
@@ -414,19 +416,18 @@ function Hero({
             </h1>
             <span
               className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-bg-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
-              title={
-                bounty.chain === "monad"
-                  ? "Settles on Monad"
-                  : "Settles on Solana"
-              }
+              title={`Settles on ${chainLabel(bounty.chain)}`}
             >
-              <span
-                className="size-1.5 rounded-full"
-                style={{
-                  background: bounty.chain === "monad" ? "#836EF9" : "#14F195",
-                }}
-              />
-              {bounty.chain === "monad" ? "Monad" : "Solana"}
+              {chainLogo(bounty.chain) && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={chainLogo(bounty.chain) as string}
+                  alt=""
+                  className="size-3 rounded-full object-contain"
+                  aria-hidden
+                />
+              )}
+              {chainLabel(bounty.chain)}
             </span>
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-small text-text-secondary">

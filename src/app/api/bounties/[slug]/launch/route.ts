@@ -16,9 +16,10 @@ import {
 } from "@/lib/solana/env";
 import { getChainAdapter, isChain } from "@/lib/chains";
 import {
-  getMonadTreasuryAddressOrNull,
-  monadEscrowMode,
+  getEvmTreasuryAddressOrNull,
+  evmEscrowMode,
 } from "@/lib/chains/evm/env";
+import { chainLabel, isEvmChain, nativeSymbol } from "@/lib/chains/evm/config";
 import {
   BOUNTY_CREATION_FEE_USD,
   DURATION_HOURS_OPTIONS,
@@ -153,17 +154,15 @@ export async function POST(
   /* ---- Escrow verification (per chain) ----------------------------- */
   const chain = isChain(bounty.chain) ? bounty.chain : "solana";
   const adapter = getChainAdapter(chain);
-  // Native-currency sentinel differs per chain (SOL vs MON).
-  const isNativeReward =
-    chain === "monad"
-      ? bounty.rewardTokenSymbol === "MON"
-      : bounty.rewardTokenSymbol === "SOL";
+  // Native-currency sentinel differs per chain (SOL vs MON/ETH).
+  const isNativeReward = isEvmChain(chain)
+    ? bounty.rewardTokenSymbol === nativeSymbol(chain)
+    : bounty.rewardTokenSymbol === "SOL";
   // Treasury + escrow mode resolve per chain.
-  const treasury =
-    chain === "monad"
-      ? getMonadTreasuryAddressOrNull()
-      : getTreasuryPublicKeyOrNull();
-  const mode = chain === "monad" ? monadEscrowMode() : escrowMode();
+  const treasury = isEvmChain(chain)
+    ? getEvmTreasuryAddressOrNull(chain)
+    : getTreasuryPublicKeyOrNull();
+  const mode = isEvmChain(chain) ? evmEscrowMode(chain) : escrowMode();
 
   let escrowTxHash: string | null = null;
   let escrowConfirmedAt: Date = new Date();
@@ -203,7 +202,7 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: `Connect a ${chain === "monad" ? "Monad" : "Solana"} wallet before launching a bounty`,
+          error: `Connect a ${chainLabel(chain)} wallet before launching a bounty`,
           errorCode: "wallet_not_connected",
         },
         { status: 409 },
@@ -223,8 +222,8 @@ export async function POST(
     // Fee routing:
     //  • Solana + revenue wallet → pool to treasury, fee to revenue (split).
     //  • Solana w/o revenue → combined into one treasury transfer (legacy).
-    //  • Monad → ALWAYS combined to treasury (a plain EVM tx has one
-    //    recipient); fee stays in treasury and is swept to revenue later.
+    //  • EVM (Monad/Base) → ALWAYS combined to treasury (a plain EVM tx has
+    //    one recipient); fee stays in treasury and is swept to revenue later.
     const revenueWallet =
       chain === "solana" ? getRevenueWalletPublicKeyOrNull() : null;
     const splitFee = !!revenueWallet && creationFeeAmount > 0;
@@ -233,7 +232,7 @@ export async function POST(
     let verifyExpectedFee:
       | { recipientWallet: string; amount: bigint }
       | undefined;
-    if (chain === "monad") {
+    if (isEvmChain(chain)) {
       verifyExpectedAmount = expectedPoolRaw;
       verifyExpectedFee =
         expectedFeeRaw > BigInt(0)

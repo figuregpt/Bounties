@@ -13,6 +13,10 @@ import {
   MIN_REWARD_PER_HUNTER_USD,
   MIN_TOTAL_POOL_USD,
 } from "@/lib/validation/bounty";
+import type { Chain } from "@/lib/chains/types";
+import { SUPPORTED_CHAINS } from "@/lib/chains/types";
+import { chainLabel } from "@/lib/chains/evm/config";
+import { chainLogo } from "@/lib/chains/logos";
 
 /**
  * Reward section: token picker (paste CA + quick picks) + amount
@@ -33,13 +37,17 @@ type Props = {
   mode: RewardMode;
   /** Settlement chain. Switching it clears the selected token (addresses
    *  and prices don't carry across chains). */
-  chain: "solana" | "monad";
+  chain: Chain;
+  /** Networks the creator may pick. An EVM chain is only listed once it's
+   *  configured for real settlement on the server. Defaults to all
+   *  supported chains when omitted. */
+  availableChains?: Chain[];
   /** True for `pool_lottery` distribution: switches the UI to ask
    *  for "Total prize pool" and "Number of winners" directly, since
    *  per-hunter × slots framing confuses the lottery flow. */
   isLottery?: boolean;
   onTokenChange: (next: TokenOption | null) => void;
-  onChainChange: (next: "solana" | "monad") => void;
+  onChainChange: (next: Chain) => void;
   onPerHunterChange: (next: number) => void;
   onMaxHuntersChange: (next: number) => void;
   onModeChange: (next: RewardMode) => void;
@@ -51,6 +59,7 @@ export function RewardSection({
   maxHunters,
   mode,
   chain,
+  availableChains,
   isLottery = false,
   onTokenChange,
   onChainChange,
@@ -83,7 +92,11 @@ export function RewardSection({
         <h3 className="mb-2 text-small font-medium text-text-primary">
           Network
         </h3>
-        <ChainToggle chain={chain} onChange={onChainChange} />
+        <ChainToggle
+          chain={chain}
+          chains={availableChains ?? SUPPORTED_CHAINS}
+          onChange={onChainChange}
+        />
       </div>
 
       {/* Token picker --------------------------------------------------- */}
@@ -219,27 +232,28 @@ export function RewardSection({
   );
 }
 
-/** Solana / Monad segmented toggle. Picking a network clears the token. */
+/** Solana / Monad / Base segmented toggle. Picking a network clears the
+ *  token. Chains + logos are derived from the registry, so a new chain
+ *  shows up here automatically. */
 function ChainToggle({
   chain,
+  chains,
   onChange,
 }: {
-  chain: "solana" | "monad";
-  onChange: (next: "solana" | "monad") => void;
+  chain: Chain;
+  chains: readonly Chain[];
+  onChange: (next: Chain) => void;
 }) {
-  const options: Array<{ value: "solana" | "monad"; label: string; dot: string }> = [
-    { value: "solana", label: "Solana", dot: "#14F195" },
-    { value: "monad", label: "Monad", dot: "#836EF9" },
-  ];
   return (
     <div className="inline-flex rounded-[var(--radius-button)] border border-border-default bg-bg-surface p-1">
-      {options.map((o) => {
-        const active = chain === o.value;
+      {chains.map((value) => {
+        const active = chain === value;
+        const logo = chainLogo(value);
         return (
           <button
-            key={o.value}
+            key={value}
             type="button"
-            onClick={() => onChange(o.value)}
+            onClick={() => onChange(value)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-small font-medium transition-colors",
               active
@@ -247,11 +261,16 @@ function ChainToggle({
                 : "text-text-tertiary hover:text-text-secondary",
             )}
           >
-            <span
-              className="size-1.5 rounded-full"
-              style={{ background: o.dot }}
-            />
-            {o.label}
+            {logo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logo}
+                alt=""
+                className="size-4 rounded-full"
+                aria-hidden
+              />
+            )}
+            {chainLabel(value)}
           </button>
         );
       })}

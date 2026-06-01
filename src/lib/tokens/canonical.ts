@@ -20,6 +20,8 @@
  * the form's `defaultCreateBountyValues` is a client call.
  */
 
+import { EVM_CHAINS, isEvmChain } from "@/lib/chains/evm/config";
+
 export type SolanaNetwork = "mainnet-beta" | "devnet";
 
 export type CanonicalToken = {
@@ -107,20 +109,25 @@ const REGISTRY: Record<SolanaNetwork, Record<string, CanonicalToken>> = {
 };
 
 /* =========================================================================
-   Monad (EVM) canonical tokens.
+   EVM (Monad / Base / …) canonical tokens.
 
-   USDC on Monad has no DexScreener logo (it's the quote side of pairs, like
-   on Solana), so the strict logo-gate in enrichToken would reject it. We
-   hardcode it here (pegged $1, USDC logo) so it's selectable. MON is NOT
-   canonical — it has a tradable pair + logo on DexScreener, so it enriches
-   normally. EVM addresses are matched case-insensitively.
+   USDC on an EVM chain has no DexScreener logo (it's the quote side of
+   pairs, like on Solana), so the strict logo-gate in enrichToken would
+   reject it. We hardcode it (pegged $1, USDC logo, per-chain address from
+   EVM_CHAINS) so it's selectable. Native (MON/ETH) is handled separately in
+   enrichToken (live DexScreener price + symbol override).
    ========================================================================= */
 
-const MONAD_USDC_ADDRESS = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
-
-const MONAD_CANONICAL: Record<string, CanonicalToken> = {
-  USDC: {
-    mint: MONAD_USDC_ADDRESS,
+/** EVM USDC canonical for `chain` if `mint` is that chain's USDC.
+ *  Case-insensitive (EVM addresses). */
+export function getEvmCanonicalByMint(
+  mint: string,
+  chain: string,
+): CanonicalToken | null {
+  if (!isEvmChain(chain)) return null;
+  if (mint.toLowerCase() !== EVM_CHAINS[chain].usdc.toLowerCase()) return null;
+  return {
+    mint,
     symbol: "USDC",
     name: "USD Coin",
     decimals: 6,
@@ -128,16 +135,7 @@ const MONAD_CANONICAL: Record<string, CanonicalToken> = {
     category: "stablecoin",
     logoUrl: USDC_LOGO,
     firstSeenAt: new Date("2025-01-01T00:00:00Z"),
-  },
-};
-
-/** Monad canonical lookup (case-insensitive — EVM addresses). */
-export function getMonadCanonicalByMint(mint: string): CanonicalToken | null {
-  const lower = mint.toLowerCase();
-  for (const t of Object.values(MONAD_CANONICAL)) {
-    if (t.mint.toLowerCase() === lower) return t;
-  }
-  return null;
+  };
 }
 
 /* =========================================================================

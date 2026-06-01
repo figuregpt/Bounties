@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { bounties, tokens } from "@/lib/db/schema";
 import { verifyCronRequest } from "@/lib/cron/auth";
 import { enrichToken } from "@/lib/tokens/enrichment";
+import { isChain } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       // Enrich on the token's OWN chain — a Monad ERC-20 must not be sent
       // down the Solana/DexScreener-solana path (it would throw + go stale).
       await enrichToken(row.mint, {
-        chain: row.chain === "monad" ? "monad" : "solana",
+        chain: isChain(row.chain) ? row.chain : "solana",
         forceRefresh: true,
       });
       refreshed += 1;

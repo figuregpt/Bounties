@@ -9,6 +9,8 @@
  * fields we actually use. Everything else from the API is ignored.
  */
 
+import { isEvmChain } from "@/lib/chains/evm/config";
+
 export type EnrichedToken = {
   mint: string;
   symbol: string;
@@ -81,11 +83,12 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 export async function enrichTokenByMint(
   mintAddress: string,
-  chain: "solana" | "monad" = "solana",
+  chain: string = "solana",
 ): Promise<EnrichedToken> {
   const mint = mintAddress.trim();
-  const valid =
-    chain === "monad" ? isValidEvmToken(mint) : isValidSolanaMint(mint);
+  const valid = isEvmChain(chain)
+    ? isValidEvmToken(mint)
+    : isValidSolanaMint(mint);
   if (!valid) {
     throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
   }

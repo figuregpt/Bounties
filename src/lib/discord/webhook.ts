@@ -14,6 +14,7 @@ import "server-only";
  */
 
 import { formatTokenAmount } from "@/lib/format";
+import { chainLabel } from "@/lib/chains/evm/config";
 import type { EligibilityFilters } from "@/lib/db/schema/bounties";
 
 export type BountyAnnouncementInput = {
@@ -44,9 +45,13 @@ export type BountyAnnouncementInput = {
 };
 
 const FALLBACK_APP_URL = "https://bounties.fm";
-// Per-chain embed accent (left border) + label so the network is obvious.
-const MONAD_COLOR = 0x836ef9;
-const SOLANA_COLOR = 0x14f195;
+// Per-chain embed accent (left border) + emoji so the network is obvious.
+// Keyed by `chain`; falls back to Solana for anything unknown.
+const CHAIN_EMBED: Record<string, { emoji: string; color: number }> = {
+  solana: { emoji: "🟢", color: 0x14f195 },
+  monad: { emoji: "🟣", color: 0x836ef9 },
+  base: { emoji: "🔵", color: 0x0052ff },
+};
 
 export async function announceBountyLaunched(
   input: BountyAnnouncementInput,
@@ -79,10 +84,10 @@ export async function announceBountyLaunched(
     input.creator.displayName ??
     (input.creator.handle ? `@${input.creator.handle}` : "Anonymous");
 
-  const isMonad = input.chain === "monad";
-  const networkLabel = isMonad ? "Monad" : "Solana";
-  const networkEmoji = isMonad ? "🟣" : "🟢";
-  const networkColor = isMonad ? MONAD_COLOR : SOLANA_COLOR;
+  const chainStyle = CHAIN_EMBED[input.chain] ?? CHAIN_EMBED.solana;
+  const networkLabel = chainLabel(input.chain);
+  const networkEmoji = chainStyle.emoji;
+  const networkColor = chainStyle.color;
 
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [
     {

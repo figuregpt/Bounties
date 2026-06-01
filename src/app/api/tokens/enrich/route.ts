@@ -10,6 +10,7 @@ import {
   TokenPriceUnavailableError,
 } from "@/lib/tokens/enrichment";
 import { isValidEvmToken } from "@/lib/tokens/dexscreener";
+import { isEvmChain } from "@/lib/chains/evm/config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ export const runtime = "nodejs";
 
 const BodySchema = z.object({
   mintAddress: z.string().min(20).max(64),
-  chain: z.enum(["solana", "monad"]).optional(),
+  chain: z.enum(["solana", "monad", "base"]).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -64,18 +65,16 @@ export async function POST(req: NextRequest) {
   }
   const mintAddress = parsed.data.mintAddress.trim();
   const chain = parsed.data.chain ?? "solana";
-  const validFormat =
-    chain === "monad"
-      ? isValidEvmToken(mintAddress)
-      : isValidSolanaMint(mintAddress);
+  const validFormat = isEvmChain(chain)
+    ? isValidEvmToken(mintAddress)
+    : isValidSolanaMint(mintAddress);
   if (!validFormat) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          chain === "monad"
-            ? "Doesn't look like a Monad (0x) token address"
-            : "Doesn't look like a Solana token address",
+        error: isEvmChain(chain)
+          ? "Doesn't look like a 0x token address"
+          : "Doesn't look like a Solana token address",
         errorCode: "invalid_mint",
       },
       { status: 400 },

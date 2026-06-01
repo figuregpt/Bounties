@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { formatCompact, formatTokenPrice } from "@/lib/format";
 import { TokenAvatar } from "@/components/bounties/token-avatar";
 import type { TokenCategory } from "@/lib/tokens/enrichment";
+import { EVM_CHAINS, isEvmChain } from "@/lib/chains/evm/config";
+import type { Chain } from "@/lib/chains/types";
 
 /**
  * Phase 8.5 token picker for /create.
@@ -66,28 +68,32 @@ type Props = {
   onChange: (token: SelectedToken | null) => void;
   /** Settlement chain — drives address format (base58 vs 0x), the enrich
    *  call, the placeholder, and whether the Solana quick-picks show. */
-  chain?: "solana" | "monad";
+  chain?: Chain;
 };
 
 const MINT_LIKE_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
-/** Canonical Monad MON token (DexScreener labels it symbol "MON" with a
- *  live price). Enriching it yields symbol "MON", which the create flow
- *  settles as NATIVE MON (value send), not an ERC-20 transfer. */
-const MONAD_MON_ADDRESS = "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A";
-const MONAD_USDC_ADDRESS = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
-const MON_LOGO =
-  "https://cdn.dexscreener.com/cms/images/dbdf1b40bce8361da6215642ec5d4ad7aba0c748daa09eee62e3d6446008d469?width=800&height=800&quality=95&format=auto";
 const USDC_LOGO =
   "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png";
 
-/** One-click chips for Monad bounties (the Solana quick-picks API is
- *  Solana-only). Enriching the address resolves symbol/decimals/price. */
-const MONAD_QUICK_PICKS: { address: string; label: string; logoUrl: string }[] =
-  [
-    { address: MONAD_MON_ADDRESS, label: "Native MON", logoUrl: MON_LOGO },
-    { address: MONAD_USDC_ADDRESS, label: "USDC", logoUrl: USDC_LOGO },
+/** One-click chips for an EVM bounty (the Solana quick-picks API is
+ *  Solana-only). Native + USDC are derived from the chain registry;
+ *  enriching the address resolves symbol/decimals/price. The native chip
+ *  uses the wrapped-native address, which enrichment settles as a native
+ *  value send (not an ERC-20 transfer). */
+function evmQuickPicks(
+  chain: "monad" | "base",
+): { address: string; label: string; logoUrl: string }[] {
+  const cfg = EVM_CHAINS[chain];
+  return [
+    {
+      address: cfg.nativeWrapped,
+      label: `Native ${cfg.nativeSymbol}`,
+      logoUrl: cfg.nativeLogo,
+    },
+    { address: cfg.usdc, label: "USDC", logoUrl: USDC_LOGO },
   ];
+}
 
 export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
   const [input, setInput] = useState("");
@@ -165,7 +171,7 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     const trimmed = input.trim();
     if (!trimmed) return;
-    const pattern = chain === "monad" ? EVM_ADDR_RE : MINT_LIKE_RE;
+    const pattern = isEvmChain(chain) ? EVM_ADDR_RE : MINT_LIKE_RE;
     if (!pattern.test(trimmed)) return;
     debounceRef.current = window.setTimeout(() => {
       void enrich(trimmed);
@@ -199,8 +205,8 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={
-            chain === "monad"
-              ? "Paste Monad token address (0x…)"
+            isEvmChain(chain)
+              ? `Paste ${EVM_CHAINS[chain].label} token address (0x…)`
               : "Paste contract address (e.g. EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm)"
           }
           className="pl-9"
@@ -220,13 +226,13 @@ export function TokenPicker({ selected, onChange, chain = "solana" }: Props) {
         </p>
       )}
 
-      {chain === "monad" && (
+      {isEvmChain(chain) && (
         <div>
           <p className="mb-2 text-caption uppercase tracking-wider text-text-tertiary">
             Quick picks
           </p>
           <div className="flex flex-wrap gap-2">
-            {MONAD_QUICK_PICKS.map((q) => (
+            {evmQuickPicks(chain).map((q) => (
               <button
                 key={q.address}
                 type="button"

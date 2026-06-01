@@ -2,16 +2,18 @@
 
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { useEvmWallet } from "@/hooks/useEvmWallet";
+import { isEvmChain } from "@/lib/chains/evm/config";
 
 /**
  * Picks the chain-appropriate wallet for a bounty's settlement chain.
  * Both underlying hooks are always called (React hook rules), and we
  * return whichever one matches `chain`. Use this anywhere a hunter has to
- * connect / read the wallet that will RECEIVE a payout — a Monad bounty
- * pays a Monad address, a Solana bounty pays a Solana address.
+ * connect / read the wallet that will RECEIVE a payout — an EVM bounty
+ * (Monad / Base) pays an EVM address, a Solana bounty pays a Solana
+ * address. All EVM chains share one injected wallet (chain id differs).
  */
 export type BountyWallet = {
-  chain: "solana" | "monad";
+  chain: "solana" | "monad" | "base";
   address: string | null;
   isConnected: boolean;
   walletName: string | null;
@@ -21,9 +23,9 @@ export type BountyWallet = {
 export function useBountyWallet(chain: string | null | undefined): BountyWallet {
   const sol = useWalletConnection();
   const evm = useEvmWallet();
-  if (chain === "monad") {
+  if (chain && isEvmChain(chain)) {
     return {
-      chain: "monad",
+      chain,
       address: evm.address,
       isConnected: evm.isConnected,
       walletName: evm.walletName,
@@ -44,7 +46,7 @@ export function useBountyWallet(chain: string | null | undefined): BountyWallet 
  *  call before every claim — it no-ops server-side when nothing changed. */
 export async function registerWalletForChain(
   address: string,
-  chain: "solana" | "monad",
+  chain: "solana" | "monad" | "base",
   provider: string | null,
 ): Promise<void> {
   await fetch("/api/users/connect-wallet", {

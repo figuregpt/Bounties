@@ -9,7 +9,7 @@ import type { BountySortBy } from "@/lib/db/queries/bounties";
 export type DiscoverFilters = {
   statuses: BountyStatus[];
   /** Settlement chain filter. Undefined = all chains. */
-  chain?: "solana" | "monad";
+  chain?: "solana" | "monad" | "base";
   /** Token symbols OR base58 mint addresses. The token-picker UI adds
    *  symbols for canonical chips and mint strings for paste-box
    *  entries. The server matches either via `rewardTokenSymbol` /

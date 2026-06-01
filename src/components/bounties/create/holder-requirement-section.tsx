@@ -7,6 +7,9 @@ import {
   TokenPicker,
   type SelectedToken,
 } from "@/components/bounties/create/token-picker";
+import type { Chain } from "@/lib/chains/types";
+import { chainLabel } from "@/lib/chains/evm/config";
+import { chainLogo } from "@/lib/chains/logos";
 
 /**
  * Optional gate: hunters need to hold at least N of a token in their
@@ -32,10 +35,10 @@ type Props = {
   value: HolderRequirementValue;
   onChange: (next: HolderRequirementValue) => void;
   /** Bounty's settlement chain — the holder gate must check a balance on
-   *  the SAME chain (a Monad bounty gates on a Monad token, checked
-   *  against the hunter's Monad wallet). Drives the picker's address
-   *  format + quick-picks. */
-  chain: "solana" | "monad";
+   *  the SAME chain (a Monad/Base bounty gates on a token on that chain,
+   *  checked against the hunter's wallet there). Drives the picker's
+   *  address format + quick-picks. */
+  chain: Chain;
 };
 
 export function HolderRequirementSection({ value, onChange, chain }: Props) {
@@ -73,15 +76,20 @@ export function HolderRequirementSection({ value, onChange, chain }: Props) {
       </div>
 
       <div className="flex items-center gap-1.5 text-caption text-text-tertiary">
-        <span
-          className="size-1.5 rounded-full"
-          style={{ background: chain === "monad" ? "#836EF9" : "#14F195" }}
-        />
+        {chainLogo(chain) && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={chainLogo(chain) as string}
+            alt=""
+            className="size-3.5 rounded-full"
+            aria-hidden
+          />
+        )}
         Holder token must be on{" "}
         <span className="font-medium text-text-secondary">
-          {chain === "monad" ? "Monad" : "Solana"}
+          {chainLabel(chain)}
         </span>
-        {" "}— checked against the hunter&apos;s {chain === "monad" ? "Monad" : "Solana"} wallet.
+        {" "}— checked against the hunter&apos;s {chainLabel(chain)} wallet.
       </div>
 
       {showPicker ? (

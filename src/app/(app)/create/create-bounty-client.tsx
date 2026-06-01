@@ -7,10 +7,18 @@ import { Sparkles, Wallet } from "lucide-react";
 import { PublicKey } from "@solana/web3.js";
 import { erc20Abi } from "viem";
 import {
+  useConfig,
   useSendTransaction,
+  useSwitchChain,
   useWriteContract,
-  usePublicClient,
 } from "wagmi";
+import { waitForTransactionReceipt } from "wagmi/actions";
+import {
+  EVM_CHAINS,
+  isEvmChain,
+  type EvmChainKey,
+} from "@/lib/chains/evm/config";
+import type { Chain } from "@/lib/chains/types";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { useEvmWallet } from "@/hooks/useEvmWallet";
 import { FormSection } from "@/components/ui/form-section";
@@ -91,11 +99,11 @@ type Props = {
    *  becomes two transfers (pool → treasury, creation fee → revenue).
    *  Null means fees stay in the treasury (legacy mode). */
   revenueAddress: string | null;
-  /** Monad (EVM) treasury address that receives the escrow. Null when
-   *  MONAD_TREASURY_WALLET_PUBLIC_KEY isn't configured. */
-  monadTreasuryAddress: string | null;
-  /** Monad escrow mode — `mock` skips the on-chain transfer. */
-  monadEscrowMode: "mock" | "testnet" | "mainnet";
+  /** EVM treasury addresses per chain (monad, base, …). Null when that
+   *  chain's `${PREFIX}_TREASURY_WALLET_PUBLIC_KEY` isn't configured. */
+  evmTreasuries: Record<EvmChainKey, string | null>;
+  /** EVM escrow modes per chain — `mock` skips the on-chain transfer. */
+  evmEscrowModes: Record<EvmChainKey, "mock" | "testnet" | "mainnet">;
 };
 
 export function CreateBountyClient({
@@ -103,8 +111,8 @@ export function CreateBountyClient({
   escrowMode,
   treasuryAddress,
   revenueAddress,
-  monadTreasuryAddress,
-  monadEscrowMode,
+  evmTreasuries,
+  evmEscrowModes,
 }: Props) {
   const router = useRouter();
   const {
@@ -115,11 +123,23 @@ export function CreateBountyClient({
     sendTransaction,
     openConnectModal,
   } = useWalletConnection();
-  // EVM (Monad) wallet + tx senders. No-op until a Monad bounty is built.
+  // EVM wallet + tx senders. No-op until an EVM bounty is built.
   const evm = useEvmWallet();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
-  const monadPublicClient = usePublicClient();
+  const { switchChainAsync } = useSwitchChain();
+  const wagmiConfig = useConfig();
+  // Networks the creator can actually pick. Solana is always available;
+  // an EVM chain only shows once it's configured for real / testnet
+  // settlement (escrow mode ≠ mock AND a treasury is set) — otherwise a
+  // creator could "fund" a bounty that escrows nothing. Base appears here
+  // automatically as soon as its BASE_* env lands on the server.
+  const availableChains = useMemo<Chain[]>(() => {
+    const evm = (Object.keys(evmEscrowModes) as EvmChainKey[]).filter(
+      (k) => evmEscrowModes[k] !== "mock" && evmTreasuries[k],
+    );
+    return ["solana", ...evm];
+  }, [evmEscrowModes, evmTreasuries]);
   const [form, setForm] = useState<CreateBountyInput>(() =>
     defaultCreateBountyValues(),
   );
@@ -174,7 +194,7 @@ export function CreateBountyClient({
 
   // Switching network clears the token — addresses and prices don't carry
   // across chains, and the picker validates a different format per chain.
-  const onChainChange = (next: "solana" | "monad") => {
+  const onChainChange = (next: Chain) => {
     if (next === form.rewardChain) return;
     setToken(null);
     patch({
@@ -184,7 +204,7 @@ export function CreateBountyClient({
       rewardTokenDecimals: 0,
       rewardPerHunterUsd: null,
       // The holder-gate token must live on the bounty's chain too — clear
-      // it so a Solana token doesn't linger on a Monad bounty.
+      // it so a Solana token doesn't linger on an EVM bounty.
       eligibilityFilters: {
         ...form.eligibilityFilters,
         holderRequirement: null,
@@ -240,84 +260,88 @@ export function CreateBountyClient({
     }
 
     // 2. Escrow transfer (mock mode skips this entirely)
-    const isMonad = form.rewardChain === "monad";
-    const activeEscrowMode = isMonad ? monadEscrowMode : escrowMode;
+    const evmChain = isEvmChain(form.rewardChain) ? form.rewardChain : null;
+    const activeEscrowMode = evmChain ? evmEscrowModes[evmChain] : escrowMode;
     let txSignature: string | undefined;
     if (activeEscrowMode !== "mock") {
       setLaunchState("awaiting_signature");
       try {
-        if (isMonad) {
-          // ---- Monad (EVM) escrow: pool + fee → treasury in ONE tx ----
-          if (!monadTreasuryAddress) {
+        if (evmChain) {
+          // ---- EVM escrow (Monad/Base): pool + fee → treasury in ONE tx ----
+          const cfg = EVM_CHAINS[evmChain];
+          const evmTreasury = evmTreasuries[evmChain];
+          if (!evmTreasury) {
             throw new Error(
-              "Monad treasury not configured on the server (set MONAD_TREASURY_WALLET_PUBLIC_KEY).",
+              `${cfg.label} treasury not configured on the server.`,
             );
           }
           if (!evm.isConnected || !evm.address) {
             evm.openConnectModal();
             setLaunchState("idle");
             setLaunchError(
-              "Connect a Monad wallet to pay for the escrow, then click Launch again.",
+              `Connect a ${cfg.label} wallet to pay for the escrow, then click Launch again.`,
             );
             return;
           }
-          if (
-            evm.address.toLowerCase() === monadTreasuryAddress.toLowerCase()
-          ) {
+          if (evm.address.toLowerCase() === evmTreasury.toLowerCase()) {
             setLaunchState("error");
             setLaunchError(
               "Your wallet is the treasury address. Switch to your personal wallet and try again.",
             );
             return;
           }
-          // Save the connected Monad wallet so the payout routes to it.
-          if (evm.address !== user.walletAddress) {
-            try {
-              await fetch("/api/users/connect-wallet", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  walletAddress: evm.address,
-                  provider: evm.walletName,
-                  chain: "monad",
-                }),
-              });
-            } catch (err) {
-              console.warn("[launch] monad connect-wallet save failed:", err);
-            }
+          // Save the connected EVM wallet so the payout routes to it.
+          try {
+            await fetch("/api/users/connect-wallet", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                walletAddress: evm.address,
+                provider: evm.walletName,
+                chain: evmChain,
+              }),
+            });
+          } catch (err) {
+            console.warn("[launch] connect-wallet save failed:", err);
           }
           if (!token) throw new Error("No reward token selected");
-          const totalPoolMon = form.rewardPerHunter * form.maxHunters;
-          const creationFeeMon =
+          // Make sure the wallet is on the bounty's EVM chain before sending.
+          await switchChainAsync({ chainId: cfg.viemChain.id });
+
+          const totalPoolEvm = form.rewardPerHunter * form.maxHunters;
+          const creationFeeEvm =
             token.priceUsd > 0 ? BOUNTY_CREATION_FEE_USD / token.priceUsd : 0;
           // Pool + fee land in the treasury together (single recipient).
-          const treasuryAmountMon = totalPoolMon + creationFeeMon;
+          const treasuryAmount = totalPoolEvm + creationFeeEvm;
+          const isNative = token.symbol === cfg.nativeSymbol;
           let hash: `0x${string}`;
           // toRawAmount handles scientific-notation floats; viem's
           // parseEther/parseUnits throw on a stringified '1e-7'.
-          if (token.symbol === "MON") {
+          if (isNative) {
             hash = await sendTransactionAsync({
-              to: monadTreasuryAddress as `0x${string}`,
-              value: toRawAmount(treasuryAmountMon, 18),
+              chainId: cfg.viemChain.id,
+              to: evmTreasury as `0x${string}`,
+              value: toRawAmount(treasuryAmount, 18),
             });
           } else {
             hash = await writeContractAsync({
+              chainId: cfg.viemChain.id,
               address: token.mint as `0x${string}`,
               abi: erc20Abi,
               functionName: "transfer",
               args: [
-                monadTreasuryAddress as `0x${string}`,
-                toRawAmount(treasuryAmountMon, token.decimals),
+                evmTreasury as `0x${string}`,
+                toRawAmount(treasuryAmount, token.decimals),
               ],
             });
           }
           setLaunchState("awaiting_confirmation");
-          if (monadPublicClient) {
-            const receipt =
-              await monadPublicClient.waitForTransactionReceipt({ hash });
-            if (receipt.status !== "success") {
-              throw new Error(`On-chain escrow reverted (${hash})`);
-            }
+          const receipt = await waitForTransactionReceipt(wagmiConfig, {
+            hash,
+            chainId: cfg.viemChain.id,
+          });
+          if (receipt.status !== "success") {
+            throw new Error(`On-chain escrow reverted (${hash})`);
           }
           txSignature = hash;
         } else {
@@ -686,6 +710,7 @@ export function CreateBountyClient({
               maxHunters={form.maxHunters}
               mode={rewardMode}
               chain={form.rewardChain}
+              availableChains={availableChains}
               isLottery={form.distributionModel === "pool_lottery"}
               onTokenChange={onTokenChange}
               onChainChange={onChainChange}

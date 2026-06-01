@@ -81,7 +81,7 @@ const QuerySchema = z.object({
   minRewardPerHunterUsd: z.coerce.number().min(0).optional(),
   q: z.string().trim().min(1).optional(),
   endingWithinHours: z.coerce.number().int().min(1).optional(),
-  chain: z.enum(["solana", "monad"]).optional(),
+  chain: z.enum(["solana", "monad", "base"]).optional(),
 });
 
 export async function GET(req: NextRequest) {

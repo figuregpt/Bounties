@@ -255,8 +255,9 @@ export const CreateBountySchema = z.object({
   /** Settlement chain. Drives which wallet stack escrows the pool and
    *  which ChainAdapter verifies / pays out. Defaults to solana so
    *  existing clients that don't send it keep working. The token picker
-   *  enforces address format per chain (base58 for solana, 0x for monad). */
-  rewardChain: z.enum(["solana", "monad"]).default("solana"),
+   *  enforces address format per chain (base58 for solana, 0x for the EVM
+   *  chains monad / base). */
+  rewardChain: z.enum(["solana", "monad", "base"]).default("solana"),
   rewardTokenMint: z
     .string()
     // base58 Solana mints are 32–44 chars; 0x EVM contracts are 42 — both

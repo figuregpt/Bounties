@@ -20,12 +20,16 @@ import type {
 } from "@/lib/solana/verify-tx";
 import type { RewardResult, RewardTransfer } from "@/lib/solana/treasury";
 
-export type Chain = "solana" | "monad";
+export type Chain = "solana" | "monad" | "base";
 
-export const SUPPORTED_CHAINS = ["solana", "monad"] as const satisfies Chain[];
+export const SUPPORTED_CHAINS = [
+  "solana",
+  "monad",
+  "base",
+] as const satisfies Chain[];
 
 export function isChain(value: unknown): value is Chain {
-  return value === "solana" || value === "monad";
+  return value === "solana" || value === "monad" || value === "base";
 }
 
 // Re-export the shared transfer / verify payload shapes so call sites and

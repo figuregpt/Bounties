@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { tokens } from "@/lib/db/schema";
 import { getTokenDecimals } from "@/lib/solana/token-info";
 import { getChainAdapter, type Chain } from "@/lib/chains";
+import { EVM_CHAINS, isEvmChain } from "@/lib/chains/evm/config";
 import {
   enrichTokenByMint as fetchFromDexScreener,
   isValidEvmToken,
@@ -16,7 +17,7 @@ import {
 import {
   currentNetwork,
   getCanonicalByMint,
-  getMonadCanonicalByMint,
+  getEvmCanonicalByMint,
 } from "./canonical";
 
 /**
@@ -123,8 +124,9 @@ export async function enrichToken(
 ): Promise<EnrichedTokenRow> {
   const chain = opts.chain ?? "solana";
   const mint = mintAddress.trim();
-  const validFormat =
-    chain === "monad" ? isValidEvmToken(mint) : isValidSolanaMint(mint);
+  const validFormat = isEvmChain(chain)
+    ? isValidEvmToken(mint)
+    : isValidSolanaMint(mint);
   if (!validFormat) {
     throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
   }
@@ -140,43 +142,74 @@ export async function enrichToken(
     throw new TokenFlaggedError(existing.mint, existing.symbol);
   }
 
-  // Monad canonical short-circuit (USDC): no DexScreener logo, so hardcode
-  // it ($1, USDC logo, 6 decimals) instead of failing the strict logo gate.
-  if (chain === "monad") {
-    const mc = getMonadCanonicalByMint(mint);
-    if (mc) {
+  // EVM short-circuits (Monad / Base):
+  //  • USDC has no DexScreener logo (quote side) → hardcode it ($1, USDC
+  //    logo, 6 decimals) instead of failing the strict logo gate.
+  //  • Native (MON/ETH): DexScreener prices the WRAPPED token but labels it
+  //    "WMON"/"WETH"; we enrich the wrapped address, override the symbol to
+  //    the native symbol + 18 decimals so the create flow settles it as a
+  //    native value transfer.
+  if (isEvmChain(chain)) {
+    const cfg = EVM_CHAINS[chain];
+    const usdc = getEvmCanonicalByMint(mint, chain);
+    if (usdc) {
       const now = new Date();
       const upserted = await db
         .insert(tokens)
         .values({
           chain,
           mint,
-          symbol: mc.symbol,
-          name: mc.name,
-          decimals: mc.decimals,
-          logoUrl: mc.logoUrl,
-          category: mc.category,
-          jupiterPriceUsd: String(mc.priceUsd),
+          symbol: usdc.symbol,
+          name: usdc.name,
+          decimals: usdc.decimals,
+          logoUrl: usdc.logoUrl,
+          category: usdc.category,
+          jupiterPriceUsd: String(usdc.priceUsd),
           jupiterPriceUpdatedAt: now,
           priceChange24hPercent: "0",
-          firstSeenAt: mc.firstSeenAt,
+          firstSeenAt: usdc.firstSeenAt,
           isAdminVerified: true,
         })
         .onConflictDoUpdate({
           target: [tokens.chain, tokens.mint],
           set: {
-            symbol: mc.symbol,
-            name: mc.name,
-            decimals: mc.decimals,
-            logoUrl: mc.logoUrl,
-            category: mc.category,
-            jupiterPriceUsd: String(mc.priceUsd),
+            symbol: usdc.symbol,
+            name: usdc.name,
+            decimals: usdc.decimals,
+            logoUrl: usdc.logoUrl,
+            category: usdc.category,
+            jupiterPriceUsd: String(usdc.priceUsd),
             jupiterPriceUpdatedAt: now,
             isAdminVerified: true,
           },
         })
         .returning();
       return rowToEnriched(upserted[0]!);
+    }
+
+    if (mint.toLowerCase() === cfg.nativeWrapped.toLowerCase()) {
+      const dex = await fetchFromDexScreener(mint, chain);
+      const now = new Date();
+      const set = {
+        symbol: cfg.nativeSymbol,
+        name: `${cfg.label} (native)`,
+        decimals: 18,
+        logoUrl: dex.imageUrl,
+        category: "other" as TokenCategory,
+        jupiterPriceUsd: dex.priceUsd.toString(),
+        jupiterPriceUpdatedAt: now,
+        marketCapUsd: dex.marketCapUsd?.toString() ?? null,
+        liquidityUsd: dex.liquidityUsd.toString(),
+        volume24hUsd: dex.volume24hUsd.toString(),
+        priceChange24hPercent: dex.priceChange24hPercent.toString(),
+        dexScreenerPairAddress: dex.dexScreenerPairAddress,
+      };
+      const upserted = await db
+        .insert(tokens)
+        .values({ chain, mint, firstSeenAt: now, isAdminVerified: true, ...set })
+        .onConflictDoUpdate({ target: [tokens.chain, tokens.mint], set })
+        .returning();
+      return rowToEnriched(upserted[0]!, dex);
     }
   }
 
@@ -288,10 +321,9 @@ export async function enrichToken(
   // (Solana mint account vs EVM erc20.decimals()).
   let decimals = existing?.decimals ?? dex.decimals;
   if (decimals == null) {
-    decimals =
-      chain === "monad"
-        ? await getChainAdapter("monad").getTokenDecimals(mint)
-        : await getTokenDecimals(mint);
+    decimals = isEvmChain(chain)
+      ? await getChainAdapter(chain).getTokenDecimals(mint)
+      : await getTokenDecimals(mint);
   }
 
   const category = (existing?.category as TokenCategory | null) ??

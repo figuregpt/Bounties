@@ -20,6 +20,7 @@ import {
   formatTokenPrice,
 } from "@/lib/format";
 import { CHAIN_LOGOS } from "@/lib/chains/logos";
+import { chainLabel } from "@/lib/chains/evm/config";
 import { TokenChip } from "./token-chip";
 import { SafeTokenAvatar } from "./token-avatar";
 import { TweetEmbed } from "./tweet-embed";
@@ -216,17 +217,17 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
 /** Which chain the bounty settles on — logo only, shown on every card so
  *  the feed makes the network obvious at a glance. */
 function ChainBadge({ chain }: { chain: string }) {
-  const isMonad = chain === "monad";
-  const logo = CHAIN_LOGOS[isMonad ? "monad" : "solana"];
+  const label = chainLabel(chain);
+  const logo = CHAIN_LOGOS[chain] ?? CHAIN_LOGOS.solana;
   return (
     <span
       className="grid size-6 place-items-center rounded-full bg-bg-elevated"
-      title={isMonad ? "Settles on Monad" : "Settles on Solana"}
+      title={`Settles on ${label}`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={logo}
-        alt={isMonad ? "Monad" : "Solana"}
+        alt={label}
         className="size-4 rounded-full object-contain"
       />
     </span>

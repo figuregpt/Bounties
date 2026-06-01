@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { getRevenueWalletPublicKeyOrNull } from "@/lib/solana/env";
 import { getChainAdapter, isChain } from "@/lib/chains";
+import { isEvmChain, chainLabel } from "@/lib/chains/evm/config";
 import { updateClaimStatus } from "@/lib/bounties/claim-status";
 import { publishEvent } from "@/lib/realtime/publisher";
 import { recordActivity } from "@/lib/realtime/activity";
@@ -216,10 +217,9 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        error:
-          chain === "monad"
-            ? "Connect a Monad wallet so we know where to send the reward"
-            : "Connect a wallet so we know where to send the reward",
+        error: isEvmChain(chain)
+          ? `Connect a ${chainLabel(chain)} wallet so we know where to send the reward`
+          : "Connect a wallet so we know where to send the reward",
         errorCode: "wallet_not_connected",
       },
       { status: 409 },

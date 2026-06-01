@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bounties, claims } from "@/lib/db/schema";
 import { checkEligibility } from "@/lib/bounties/eligibility";
+import { isChain } from "@/lib/chains/types";
 
 /**
  * Statuses that count toward the per-user "active hunt" cap. A hunter
@@ -198,9 +199,9 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    // Holder gate runs on the bounty's chain — a Monad bounty checks an
-    // ERC-20 balance on Monad, a Solana bounty checks an SPL balance.
-    const holderChain = bounty.chain === "monad" ? "monad" : "solana";
+    // Holder gate runs on the bounty's chain — an EVM bounty (Monad/Base)
+    // checks an ERC-20 balance there, a Solana bounty checks an SPL balance.
+    const holderChain = isChain(bounty.chain) ? bounty.chain : "solana";
     const { getChainAdapter } = await import("@/lib/chains");
     let ok = false;
     try {

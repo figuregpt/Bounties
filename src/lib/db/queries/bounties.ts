@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { bounties, claims, tokens, users } from "@/lib/db/schema";
+import { isChain } from "@/lib/chains/types";
 
 /**
  * Claim statuses that count toward "X of Y slots claimed". A claim
@@ -381,7 +382,7 @@ function buildWhere(filters: BountyFilters): SQL | undefined {
     }
   }
 
-  if (filters.chain === "solana" || filters.chain === "monad") {
+  if (filters.chain && isChain(filters.chain)) {
     conds.push(eq(bounties.chain, filters.chain));
   }
 

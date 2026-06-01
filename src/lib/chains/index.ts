@@ -5,11 +5,12 @@
  */
 import type { Chain, ChainAdapter } from "./types";
 import { solanaAdapter } from "./solana";
-import { monadAdapter } from "./evm/monad-adapter";
+import { createEvmAdapter } from "./evm/adapter";
 
 const ADAPTERS: Partial<Record<Chain, ChainAdapter>> = {
   solana: solanaAdapter,
-  monad: monadAdapter,
+  monad: createEvmAdapter("monad"),
+  base: createEvmAdapter("base"),
 };
 
 export function getChainAdapter(chain: Chain): ChainAdapter {

@@ -90,6 +90,7 @@ export function FilterSidebar({ filters, onChange }: Props) {
               { value: undefined, label: "All", chain: null },
               { value: "solana", label: "Solana", chain: "solana" },
               { value: "monad", label: "Monad", chain: "monad" },
+              { value: "base", label: "Base", chain: "base" },
             ] as const
           ).map((o) => {
             const active = filters.chain === o.value;
