@@ -14,13 +14,10 @@ import "server-only";
  */
 
 import { formatTokenAmount } from "@/lib/format";
-import { chainLabel } from "@/lib/chains/evm/config";
 import type { EligibilityFilters } from "@/lib/db/schema/bounties";
 
 export type BountyAnnouncementInput = {
   slug: string;
-  /** Settlement chain — 'solana' | 'monad'. Surfaced in the embed. */
-  chain: string;
   rewardTokenSymbol: string;
   rewardPerHunter: string | number;
   rewardPerHunterUsd?: string | number | null;
@@ -45,13 +42,9 @@ export type BountyAnnouncementInput = {
 };
 
 const FALLBACK_APP_URL = "https://bounties.fm";
-// Per-chain embed accent (left border) + emoji so the network is obvious.
-// Keyed by `chain`; falls back to Solana for anything unknown.
-const CHAIN_EMBED: Record<string, { emoji: string; color: number }> = {
-  solana: { emoji: "🟢", color: 0x14f195 },
-  monad: { emoji: "🟣", color: 0x836ef9 },
-  base: { emoji: "🔵", color: 0x0052ff },
-};
+// Solana embed accent (left border) + emoji.
+const EMBED_EMOJI = "🟢";
+const EMBED_COLOR = 0x14f195;
 
 export async function announceBountyLaunched(
   input: BountyAnnouncementInput,
@@ -84,15 +77,10 @@ export async function announceBountyLaunched(
     input.creator.displayName ??
     (input.creator.handle ? `@${input.creator.handle}` : "Anonymous");
 
-  const chainStyle = CHAIN_EMBED[input.chain] ?? CHAIN_EMBED.solana;
-  const networkLabel = chainLabel(input.chain);
-  const networkEmoji = chainStyle.emoji;
-  const networkColor = chainStyle.color;
-
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [
     {
       name: "Network",
-      value: `${networkEmoji} ${networkLabel}`,
+      value: `${EMBED_EMOJI} Solana`,
       inline: true,
     },
     {
@@ -144,10 +132,10 @@ export async function announceBountyLaunched(
       : "A new bounty is live. Complete the actions on X to earn the reward.";
 
   const embed: Record<string, unknown> = {
-    title: `${networkEmoji} ${input.rewardTokenSymbol} bounty just went live on ${networkLabel}`,
+    title: `${EMBED_EMOJI} ${input.rewardTokenSymbol} bounty just went live on Solana`,
     url: bountyUrl,
     description,
-    color: networkColor,
+    color: EMBED_COLOR,
     timestamp: new Date().toISOString(),
     author: {
       name: `by ${creatorName}${
@@ -171,7 +159,7 @@ export async function announceBountyLaunched(
   const rolePrefix = roleId ? `<@&${roleId}> ` : "";
 
   const body = JSON.stringify({
-    content: `${rolePrefix}New ${networkLabel} bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
+    content: `${rolePrefix}New Solana bounty — **${reward}**${rewardUsd} for ${input.maxHunters} hunters`,
     embeds: [embed],
     allowed_mentions: roleId
       ? { parse: [], roles: [roleId] }

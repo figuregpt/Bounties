@@ -4,22 +4,13 @@ import { and, eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bounties, platformRevenue, userWallets } from "@/lib/db/schema";
-import {
-  escrowMode,
-  toRawAmount,
-  solToLamports,
-} from "@/lib/solana/escrow";
+import { escrowMode, toRawAmount } from "@/lib/solana/escrow";
 import { currentNetwork } from "@/lib/tokens/canonical";
 import {
   getRevenueWalletPublicKeyOrNull,
   getTreasuryPublicKeyOrNull,
 } from "@/lib/solana/env";
 import { getChainAdapter, isChain } from "@/lib/chains";
-import {
-  getEvmTreasuryAddressOrNull,
-  evmEscrowMode,
-} from "@/lib/chains/evm/env";
-import { chainLabel, isEvmChain, nativeSymbol } from "@/lib/chains/evm/config";
 import {
   BOUNTY_CREATION_FEE_USD,
   DURATION_HOURS_OPTIONS,
@@ -119,50 +110,60 @@ export async function POST(
       { status: 409 },
     );
   }
-
-  /* ---- Resolve creation fee in reward-token units ------------------ */
-  // The client baked the fee into the escrow tx using DexScreener's
-  // last-known price. We re-derive the same number from the cached
-  // tokens row here so the on-chain amount we *expect* matches the
-  // amount that was *sent*. Both come from `tokens.jupiter_price_usd`.
-  //
-  // Devnet bypass: most devnet tokens have no tracked price ($0 in our
-  // table) so the divide would explode. Skip the fee entirely on
-  // devnet — no real revenue at stake during test launches.
-  const tokenInfo = await getTokenInfo(bounty.rewardTokenMint, bounty.chain);
-  // Devnet is a SOLANA-network concept — never zero the Monad fee through
-  // it (the Monad client always sends the fee, so the server must record
-  // it). Reserve the devnet fee-skip for Solana.
-  const isDevnet = bounty.chain === "solana" && currentNetwork() === "devnet";
-  if (!isDevnet && (!tokenInfo?.priceUsd || tokenInfo.priceUsd <= 0)) {
+  // Pre-migration drafts frozen on a removed chain (monad/base) can't
+  // escrow through the Solana treasury — reject loudly instead of
+  // activating a bounty nobody can settle.
+  if (!isChain(bounty.chain)) {
+    console.error(
+      `[launch] bounty ${bounty.slug} is a draft on unsupported chain "${bounty.chain}" — cannot launch`,
+    );
     return NextResponse.json(
       {
         ok: false,
         error:
-          "Reward token has no tracked price — can't compute creation fee",
-        errorCode: "token_no_price",
+          "This draft was created on a network we no longer support. Create a new bounty.",
+        errorCode: "unsupported_chain",
       },
-      { status: 422 },
+      { status: 409 },
     );
   }
-  const creationFeeAmount =
-    isDevnet || !tokenInfo?.priceUsd || tokenInfo.priceUsd <= 0
-      ? 0
-      : BOUNTY_CREATION_FEE_USD / tokenInfo.priceUsd;
+
+  /* ---- Resolve creation fee in reward-token units ------------------ */
+  // POST /api/bounties snapshots the fee onto the draft row from the
+  // same price the client previewed; the escrow tx bakes that exact
+  // amount, so verifying against the stored value can't drift. Drafts
+  // created before the snapshot existed (NULL column) fall back to
+  // re-deriving from the cached price.
+  //
+  // Devnet bypass: no tracked prices on devnet — fee stays 0.
+  const tokenInfo = await getTokenInfo(bounty.rewardTokenMint, bounty.chain);
+  const isDevnet = currentNetwork() === "devnet";
+  let creationFeeAmount: number;
+  if (bounty.creationFeeAmount != null) {
+    creationFeeAmount = Number(bounty.creationFeeAmount);
+  } else {
+    if (!isDevnet && (!tokenInfo?.priceUsd || tokenInfo.priceUsd <= 0)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Reward token has no tracked price — can't compute creation fee",
+          errorCode: "token_no_price",
+        },
+        { status: 422 },
+      );
+    }
+    creationFeeAmount =
+      isDevnet || !tokenInfo?.priceUsd || tokenInfo.priceUsd <= 0
+        ? 0
+        : BOUNTY_CREATION_FEE_USD / tokenInfo.priceUsd;
+  }
   const totalEscrowAmount = Number(bounty.totalPool) + creationFeeAmount;
 
-  /* ---- Escrow verification (per chain) ----------------------------- */
-  const chain = isChain(bounty.chain) ? bounty.chain : "solana";
-  const adapter = getChainAdapter(chain);
-  // Native-currency sentinel differs per chain (SOL vs MON/ETH).
-  const isNativeReward = isEvmChain(chain)
-    ? bounty.rewardTokenSymbol === nativeSymbol(chain)
-    : bounty.rewardTokenSymbol === "SOL";
-  // Treasury + escrow mode resolve per chain.
-  const treasury = isEvmChain(chain)
-    ? getEvmTreasuryAddressOrNull(chain)
-    : getTreasuryPublicKeyOrNull();
-  const mode = isEvmChain(chain) ? evmEscrowMode(chain) : escrowMode();
+  /* ---- Escrow verification (Solana) --------------------------------- */
+  const adapter = getChainAdapter("solana");
+  const treasury = getTreasuryPublicKeyOrNull();
+  const mode = escrowMode();
 
   let escrowTxHash: string | null = null;
   let escrowConfirmedAt: Date = new Date();
@@ -177,7 +178,7 @@ export async function POST(
   } else {
     if (!treasury) {
       return NextResponse.json(
-        { ok: false, error: `Treasury wallet not configured for ${chain}` },
+        { ok: false, error: "Treasury wallet not configured" },
         { status: 503 },
       );
     }
@@ -188,57 +189,45 @@ export async function POST(
       );
     }
 
-    // Creator's wallet on the bounty's chain (who funded the escrow).
-    // Resolved from user_wallets; Solana falls back to the legacy column.
+    // Creator's Solana wallet (who funded the escrow). Resolved from
+    // user_wallets; falls back to the legacy users.walletAddress column.
     const [creatorWalletRow] = await db
       .select({ address: userWallets.address })
       .from(userWallets)
-      .where(and(eq(userWallets.userId, user.id), eq(userWallets.chain, chain)))
+      .where(
+        and(eq(userWallets.userId, user.id), eq(userWallets.chain, "solana")),
+      )
       .limit(1);
-    const creatorWallet =
-      creatorWalletRow?.address ??
-      (chain === "solana" ? user.walletAddress : null);
+    const creatorWallet = creatorWalletRow?.address ?? user.walletAddress;
     if (!creatorWallet) {
       return NextResponse.json(
         {
           ok: false,
-          error: `Connect a ${chainLabel(chain)} wallet before launching a bounty`,
+          error: "Connect a Solana wallet before launching a bounty",
           errorCode: "wallet_not_connected",
         },
         { status: 409 },
       );
     }
 
-    const poolNumeric = Number(bounty.totalPool);
-    const toRaw = (n: number) =>
-      chain === "solana" && isNativeReward
-        ? solToLamports(n)
-        : toRawAmount(n, bounty.rewardTokenDecimals);
-    const expectedPoolRaw = toRaw(poolNumeric);
+    // ANSEM is always an SPL transfer — no native-SOL path anymore.
+    const toRaw = (n: number) => toRawAmount(n, bounty.rewardTokenDecimals);
+    const expectedPoolRaw = toRaw(Number(bounty.totalPool));
     const expectedFeeRaw =
       creationFeeAmount > 0 ? toRaw(creationFeeAmount) : BigInt(0);
-    const expectedMint = isNativeReward ? null : bounty.rewardTokenMint;
+    const expectedMint = bounty.rewardTokenMint;
 
     // Fee routing:
-    //  • Solana + revenue wallet → pool to treasury, fee to revenue (split).
-    //  • Solana w/o revenue → combined into one treasury transfer (legacy).
-    //  • EVM (Monad/Base) → ALWAYS combined to treasury (a plain EVM tx has
-    //    one recipient); fee stays in treasury and is swept to revenue later.
-    const revenueWallet =
-      chain === "solana" ? getRevenueWalletPublicKeyOrNull() : null;
+    //  • revenue wallet configured → pool to treasury, fee to revenue.
+    //  • otherwise → combined into one treasury transfer (legacy).
+    const revenueWallet = getRevenueWalletPublicKeyOrNull();
     const splitFee = !!revenueWallet && creationFeeAmount > 0;
 
     let verifyExpectedAmount: bigint;
     let verifyExpectedFee:
       | { recipientWallet: string; amount: bigint }
       | undefined;
-    if (isEvmChain(chain)) {
-      verifyExpectedAmount = expectedPoolRaw;
-      verifyExpectedFee =
-        expectedFeeRaw > BigInt(0)
-          ? { recipientWallet: treasury, amount: expectedFeeRaw }
-          : undefined;
-    } else if (splitFee) {
+    if (splitFee) {
       verifyExpectedAmount = expectedPoolRaw;
       verifyExpectedFee = {
         recipientWallet: revenueWallet!,
@@ -348,7 +337,6 @@ export async function POST(
   // the launch-time clock, not the draft placeholder.
   void announceBountyLaunched({
     slug: activated.slug,
-    chain: activated.chain,
     rewardTokenSymbol: activated.rewardTokenSymbol,
     rewardPerHunter: activated.rewardPerHunter,
     rewardPerHunterUsd: activated.rewardPerHunterUsd,

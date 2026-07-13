@@ -11,7 +11,6 @@ import {
 } from "@/lib/db/schema";
 import { getRevenueWalletPublicKeyOrNull } from "@/lib/solana/env";
 import { getChainAdapter, isChain } from "@/lib/chains";
-import { isEvmChain, chainLabel } from "@/lib/chains/evm/config";
 import { updateClaimStatus } from "@/lib/bounties/claim-status";
 import { publishEvent } from "@/lib/realtime/publisher";
 import { recordActivity } from "@/lib/realtime/activity";
@@ -140,6 +139,25 @@ export async function POST(
     );
   }
 
+  // Everything settles on Solana. Historical claims frozen on a removed
+  // chain (monad/base) must NOT be routed through the Solana treasury —
+  // and the check must run BEFORE the verified→claiming reservation, or
+  // the row would wedge in 'claiming' with no recovery path.
+  if (!isChain(claim.chain)) {
+    console.error(
+      `[claim-reward] claim ${claim.id} is on unsupported chain "${claim.chain}" — manual settlement required`,
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "This reward was created on a network we no longer support. Contact support to settle it manually.",
+        errorCode: "unsupported_chain",
+      },
+      { status: 409 },
+    );
+  }
+
   /* ---- Atomic reservation (verified → claiming) -------------------- */
   // Ownership + status are checked atomically in the predicate.
   // Concurrent calls lose; the loser branch below distinguishes
@@ -186,23 +204,17 @@ export async function POST(
     );
   }
 
-  /* ---- Recipient resolution (per chain) ---------------------------- */
-  // The reward settles on the bounty's chain, so the recipient must be the
-  // hunter's wallet ON THAT CHAIN. Resolved from user_wallets (userId,
-  // chain); Solana falls back to the legacy users.walletAddress during the
-  // migration window. A Monad bounty can only pay a Monad address — if the
-  // hunter only connected Solana, they get a clean "connect a Monad wallet"
-  // message instead of a silent address rejection.
-  const chain = isChain(claim.chain) ? claim.chain : "solana";
-  const adapter = getChainAdapter(chain);
+  /* ---- Recipient resolution ----------------------------------------- */
+  const adapter = getChainAdapter("solana");
 
   const walletRows = await db
     .select({ address: userWallets.address })
     .from(userWallets)
-    .where(and(eq(userWallets.userId, user.id), eq(userWallets.chain, chain)))
+    .where(
+      and(eq(userWallets.userId, user.id), eq(userWallets.chain, "solana")),
+    )
     .limit(1);
-  const recipientWallet =
-    walletRows[0]?.address ?? (chain === "solana" ? user.walletAddress : null);
+  const recipientWallet = walletRows[0]?.address ?? user.walletAddress;
 
   if (!recipientWallet || !adapter.isValidWallet(recipientWallet)) {
     // Roll the claim back so the hunter can retry once they connect.
@@ -217,9 +229,7 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        error: isEvmChain(chain)
-          ? `Connect a ${chainLabel(chain)} wallet so we know where to send the reward`
-          : "Connect a wallet so we know where to send the reward",
+        error: "Connect a wallet so we know where to send the reward",
         errorCode: "wallet_not_connected",
       },
       { status: 409 },
@@ -235,17 +245,11 @@ export async function POST(
   const feeAmount = (grossReward * PLATFORM_FEE_BPS) / 10_000;
   const netReward = grossReward - feeAmount;
 
-  /* ---- Send the reward (via the chain's adapter) ------------------- */
+  /* ---- Send the reward ---------------------------------------------- */
   // The adapter validates the recipient, pre-flights the treasury balance,
-  // and settles the payout. Fee handling differs by chain:
-  //   • Solana — when a revenue wallet is set, the 5% fee is co-transferred
-  //     in the SAME tx so payout + fee collection are atomic.
-  //   • Monad — a plain EVM tx has one recipient, so the fee is NOT moved
-  //     here; it stays in the treasury (collected at escrow) and a sweep
-  //     cron forwards accrued fees to the revenue wallet. The adapter
-  //     ignores the `fee` field.
-  const revenueWallet =
-    chain === "solana" ? getRevenueWalletPublicKeyOrNull() : null;
+  // and settles the payout. When a revenue wallet is set, the 5% fee is
+  // co-transferred in the SAME tx so payout + fee collection are atomic.
+  const revenueWallet = getRevenueWalletPublicKeyOrNull();
   const tx = await adapter.sendReward({
     toWalletAddress: recipientWallet,
     tokenMint: claim.rewardTokenMint,

@@ -3,22 +3,16 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tokens } from "@/lib/db/schema";
 import { getTokenDecimals } from "@/lib/solana/token-info";
-import { getChainAdapter, type Chain } from "@/lib/chains";
-import { EVM_CHAINS, isEvmChain } from "@/lib/chains/evm/config";
 import {
   enrichTokenByMint as fetchFromDexScreener,
-  isValidEvmToken,
   isValidSolanaMint,
   TokenLogoMissingError,
   TokenNotFoundError,
   TokenPriceUnavailableError,
   type EnrichedToken as DexEnriched,
 } from "./dexscreener";
-import {
-  currentNetwork,
-  getCanonicalByMint,
-  getEvmCanonicalByMint,
-} from "./canonical";
+import { currentNetwork, getCanonicalByMint } from "./canonical";
+import { ANSEM_DECIMALS, isAnsemMint } from "./ansem";
 
 /**
  * Server-side token enrichment.
@@ -120,14 +114,11 @@ export {
  */
 export async function enrichToken(
   mintAddress: string,
-  opts: { forceRefresh?: boolean; chain?: Chain } = {},
+  opts: { forceRefresh?: boolean } = {},
 ): Promise<EnrichedTokenRow> {
-  const chain = opts.chain ?? "solana";
+  const chain = "solana";
   const mint = mintAddress.trim();
-  const validFormat = isEvmChain(chain)
-    ? isValidEvmToken(mint)
-    : isValidSolanaMint(mint);
-  if (!validFormat) {
+  if (!isValidSolanaMint(mint)) {
     throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
   }
   const db = getDb();
@@ -140,77 +131,6 @@ export async function enrichToken(
 
   if (existing?.flaggedAsScam) {
     throw new TokenFlaggedError(existing.mint, existing.symbol);
-  }
-
-  // EVM short-circuits (Monad / Base):
-  //  • USDC has no DexScreener logo (quote side) → hardcode it ($1, USDC
-  //    logo, 6 decimals) instead of failing the strict logo gate.
-  //  • Native (MON/ETH): DexScreener prices the WRAPPED token but labels it
-  //    "WMON"/"WETH"; we enrich the wrapped address, override the symbol to
-  //    the native symbol + 18 decimals so the create flow settles it as a
-  //    native value transfer.
-  if (isEvmChain(chain)) {
-    const cfg = EVM_CHAINS[chain];
-    const usdc = getEvmCanonicalByMint(mint, chain);
-    if (usdc) {
-      const now = new Date();
-      const upserted = await db
-        .insert(tokens)
-        .values({
-          chain,
-          mint,
-          symbol: usdc.symbol,
-          name: usdc.name,
-          decimals: usdc.decimals,
-          logoUrl: usdc.logoUrl,
-          category: usdc.category,
-          jupiterPriceUsd: String(usdc.priceUsd),
-          jupiterPriceUpdatedAt: now,
-          priceChange24hPercent: "0",
-          firstSeenAt: usdc.firstSeenAt,
-          isAdminVerified: true,
-        })
-        .onConflictDoUpdate({
-          target: [tokens.chain, tokens.mint],
-          set: {
-            symbol: usdc.symbol,
-            name: usdc.name,
-            decimals: usdc.decimals,
-            logoUrl: usdc.logoUrl,
-            category: usdc.category,
-            jupiterPriceUsd: String(usdc.priceUsd),
-            jupiterPriceUpdatedAt: now,
-            isAdminVerified: true,
-          },
-        })
-        .returning();
-      return rowToEnriched(upserted[0]!);
-    }
-
-    if (mint.toLowerCase() === cfg.nativeWrapped.toLowerCase()) {
-      const dex = await fetchFromDexScreener(mint, chain);
-      const now = new Date();
-      const set = {
-        symbol: cfg.nativeSymbol,
-        name: `${cfg.label} (native)`,
-        decimals: 18,
-        logoUrl: dex.imageUrl,
-        category: "other" as TokenCategory,
-        jupiterPriceUsd: dex.priceUsd.toString(),
-        jupiterPriceUpdatedAt: now,
-        marketCapUsd: dex.marketCapUsd?.toString() ?? null,
-        liquidityUsd: dex.liquidityUsd.toString(),
-        volume24hUsd: dex.volume24hUsd.toString(),
-        priceChange24hPercent: dex.priceChange24hPercent.toString(),
-        dexScreenerPairAddress: dex.dexScreenerPairAddress,
-      };
-      const upserted = await db
-        .insert(tokens)
-        .values({ chain, mint, firstSeenAt: now, isAdminVerified: true, ...set })
-        .onConflictDoUpdate({ target: [tokens.chain, tokens.mint], set })
-        .returning();
-      return rowToEnriched(upserted[0]!, dex);
-    }
   }
 
   // Bug 1 fix: short-circuit canonical stablecoins. DexScreener can't
@@ -313,17 +233,33 @@ export async function enrichToken(
     return enrichDevnetFallback(mint, existing);
   }
 
-  // Fetch fresh from DexScreener (per chain); if it throws, propagate so
-  // the route handler can map to a 4xx with a useful message.
-  const dex = await fetchFromDexScreener(mint, chain);
+  // Fetch fresh from DexScreener; if it throws, propagate so the route
+  // handler can map to a 4xx with a useful message. Exception: ANSEM —
+  // every launch depends on this one row, so a DexScreener hiccup falls
+  // back to the (minutes-)stale cached price instead of bricking
+  // bounty creation platform-wide.
+  let dex: DexEnriched;
+  try {
+    dex = await fetchFromDexScreener(mint);
+  } catch (err) {
+    if (
+      isAnsemMint(mint) &&
+      existing &&
+      Number(existing.jupiterPriceUsd ?? 0) > 0
+    ) {
+      console.warn(
+        "[enrichToken] DexScreener failed for ANSEM — serving stale cached row:",
+        err instanceof Error ? err.message : err,
+      );
+      return rowToEnriched(existing);
+    }
+    throw err;
+  }
 
-  // Decimals are stable so we only fetch once — from the chain's adapter
-  // (Solana mint account vs EVM erc20.decimals()).
+  // Decimals are stable so we only fetch once — from the mint account.
   let decimals = existing?.decimals ?? dex.decimals;
   if (decimals == null) {
-    decimals = isEvmChain(chain)
-      ? await getChainAdapter(chain).getTokenDecimals(mint)
-      : await getTokenDecimals(mint);
+    decimals = await getTokenDecimals(mint);
   }
 
   const category = (existing?.category as TokenCategory | null) ??
@@ -404,7 +340,11 @@ async function enrichDevnetFallback(
 ): Promise<EnrichedTokenRow> {
   const db = getDb();
   // Reuse cached decimals if we have a prior row; otherwise probe chain.
-  const decimals = existing?.decimals ?? (await getTokenDecimals(mint));
+  // ANSEM is a mainnet-only mint — probing the devnet RPC for it throws,
+  // so its decimals come from the pinned constant.
+  const decimals =
+    existing?.decimals ??
+    (isAnsemMint(mint) ? ANSEM_DECIMALS : await getTokenDecimals(mint));
   const placeholderSymbol = mint.slice(0, 4).toUpperCase();
   const placeholderName = `Devnet ${placeholderSymbol}…`;
   const now = new Date();
@@ -480,10 +420,7 @@ function rowToEnriched(
 }
 
 /** Increment usage counter when a bounty references this token. */
-export async function incrementTokenUsage(
-  mintAddress: string,
-  chain: Chain = "solana",
-): Promise<void> {
+export async function incrementTokenUsage(mintAddress: string): Promise<void> {
   const db = getDb();
   await db
     .update(tokens)
@@ -491,5 +428,5 @@ export async function incrementTokenUsage(
       usageCount: sql`${tokens.usageCount} + 1`,
       bountyCount: sql`${tokens.bountyCount} + 1`,
     })
-    .where(and(eq(tokens.chain, chain), eq(tokens.mint, mintAddress)));
+    .where(and(eq(tokens.chain, "solana"), eq(tokens.mint, mintAddress)));
 }

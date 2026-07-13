@@ -38,12 +38,7 @@ import { useHunt } from "@/hooks/useHunt";
 import { useClaimRealtime } from "@/hooks/useClaimRealtime";
 import { useHolderCheck } from "@/hooks/useHolderCheck";
 import { useNow } from "@/hooks/useNow";
-import { isEvmChain, chainLabel } from "@/lib/chains/evm/config";
-import { chainLogo } from "@/lib/chains/logos";
-import {
-  useBountyWallet,
-  registerWalletForChain,
-} from "@/hooks/useBountyWallet";
+import { useBountyWallet, registerWallet } from "@/hooks/useBountyWallet";
 import type {
   EligibilityRequirement,
   EligibilityResult,
@@ -98,9 +93,7 @@ export function BountyDetailClient({
   tokenInfo,
 }: Props) {
   const router = useRouter();
-  // Chain-aware wallet: a Monad bounty pays a Monad address, a Solana
-  // bounty pays a Solana address. Pick the right one by bounty.chain.
-  const wallet = useBountyWallet(bounty.chain);
+  const wallet = useBountyWallet();
   const connectedWallet = wallet.address;
   const isConnected = wallet.isConnected;
   const openConnectModal = wallet.openConnectModal;
@@ -122,7 +115,6 @@ export function BountyDetailClient({
   const holderCheck = useHolderCheck({
     requirement: holderReq,
     wallet: connectedWallet,
-    chain: bounty.chain,
   });
   const effectiveEligibility = useMemo(
     () => buildEffectiveEligibility(eligibility, holderReq, holderCheck),
@@ -152,9 +144,7 @@ export function BountyDetailClient({
     // no sticky DB binding needed.
     if (!isConnected || !connectedWallet) {
       setActionMessage(
-        isEvmChain(wallet.chain)
-          ? `Connect a ${chainLabel(wallet.chain)} wallet — that's where your reward will land.`
-          : "Connect a Solana wallet (Phantom or Solflare) — that's where your reward will land.",
+        "Connect a Solana wallet (Phantom or Solflare) — that's where your reward will land.",
       );
       openConnectModal();
       return;
@@ -162,13 +152,9 @@ export function BountyDetailClient({
     setClaimingReward(true);
     setActionMessage("Sending reward to your wallet…");
     try {
-      // Register the connected wallet for this chain so the payout (which
-      // reads user_wallets by chain) routes to the wallet shown here.
-      await registerWalletForChain(
-        connectedWallet,
-        wallet.chain,
-        wallet.walletName,
-      );
+      // Register the connected wallet so the payout (which reads
+      // user_wallets) routes to the wallet shown here.
+      await registerWallet(connectedWallet, wallet.walletName);
       const res = await fetch(
         `/api/claims/${effectiveClaim.id}/claim-reward`,
         {
@@ -414,21 +400,6 @@ function Hero({
             <h1 className="text-[32px] font-medium leading-tight tracking-tight text-text-primary">
               {bounty.rewardTokenSymbol} bounty
             </h1>
-            <span
-              className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-bg-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
-              title={`Settles on ${chainLabel(bounty.chain)}`}
-            >
-              {chainLogo(bounty.chain) && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={chainLogo(bounty.chain) as string}
-                  alt=""
-                  className="size-3 rounded-full object-contain"
-                  aria-hidden
-                />
-              )}
-              {chainLabel(bounty.chain)}
-            </span>
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-small text-text-secondary">
             <span>
@@ -809,7 +780,6 @@ function ActionPanel({
               cta={uiState.primaryCta}
               claimingReward={claimingReward}
               onPrimary={onPrimary}
-              chain={bounty.chain}
             />
           )}
           {uiState.secondaryCta && (
@@ -948,14 +918,12 @@ function PrimaryClaimCta({
   cta,
   claimingReward,
   onPrimary,
-  chain,
 }: {
   cta: CtaConfig;
   claimingReward: boolean;
   onPrimary: (cta: CtaConfig) => void;
-  chain: string;
 }) {
-  const wallet = useBountyWallet(chain);
+  const wallet = useBountyWallet();
   const isConnected = wallet.isConnected;
   const openConnectModal = wallet.openConnectModal;
   const needsWallet = cta.action === "claim_reward" && !isConnected;

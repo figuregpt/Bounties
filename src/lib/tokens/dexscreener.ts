@@ -9,7 +9,7 @@
  * fields we actually use. Everything else from the API is ignored.
  */
 
-import { isEvmChain } from "@/lib/chains/evm/config";
+import { ANSEM_LOGO_URL, isAnsemMint } from "@/lib/tokens/ansem";
 
 export type EnrichedToken = {
   mint: string;
@@ -70,12 +70,6 @@ export function isValidSolanaMint(mint: string): boolean {
   return MINT_RE.test(mint.trim());
 }
 
-/** EVM contract-address shape check (0x + 40 hex). */
-const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
-export function isValidEvmToken(addr: string): boolean {
-  return EVM_ADDR_RE.test(addr.trim());
-}
-
 type CacheEntry = { value: EnrichedToken; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 60_000;
@@ -83,13 +77,10 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 export async function enrichTokenByMint(
   mintAddress: string,
-  chain: string = "solana",
 ): Promise<EnrichedToken> {
+  const chain = "solana";
   const mint = mintAddress.trim();
-  const valid = isEvmChain(chain)
-    ? isValidEvmToken(mint)
-    : isValidSolanaMint(mint);
-  if (!valid) {
+  if (!isValidSolanaMint(mint)) {
     throw new Error(`Invalid ${chain} token address: ${mintAddress}`);
   }
 
@@ -181,9 +172,16 @@ export async function enrichTokenByMint(
 
   // Strict gating: logo is required. Without it the token can't render
   // properly across feed / detail / activity and we'd have to fall back
-  // to letter circles — which we've intentionally removed.
-  if (!info?.imageUrl) {
-    throw new TokenLogoMissingError(mint, symbol);
+  // to letter circles — which we've intentionally removed. ANSEM is
+  // exempt (hardcoded logo): the one token the app depends on must
+  // never be blocked by a DexScreener metadata hiccup.
+  let imageUrl = info?.imageUrl;
+  if (!imageUrl) {
+    if (isAnsemMint(mint)) {
+      imageUrl = ANSEM_LOGO_URL;
+    } else {
+      throw new TokenLogoMissingError(mint, symbol);
+    }
   }
 
   const enriched: EnrichedToken = {
@@ -192,7 +190,7 @@ export async function enrichTokenByMint(
     name: baseToken?.name ?? baseToken?.symbol ?? "Unknown token",
     decimals: null,
     priceUsd,
-    imageUrl: info.imageUrl,
+    imageUrl,
     marketCapUsd:
       typeof best.marketCap === "number"
         ? (best.marketCap as number)

@@ -12,10 +12,14 @@ import { eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
+import { getAllCanonicalTokens } from "@/lib/tokens/canonical";
 import {
-  getAllCanonicalTokens,
-  getCanonicalBySymbol,
-} from "@/lib/tokens/canonical";
+  ANSEM_DECIMALS,
+  ANSEM_LOGO_URL,
+  ANSEM_MINT,
+  ANSEM_NAME,
+  ANSEM_SYMBOL,
+} from "@/lib/tokens/ansem";
 import type {
   ActionConfig,
   BountyCategory,
@@ -150,28 +154,20 @@ async function main() {
     .values([
       ...canonicalRows,
       {
-        mint: "DogWifHatxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        symbol: "WIF",
-        name: "dogwifhat",
-        decimals: 6,
+        // The one live reward token. Seed price is a bootstrap — the
+        // first enrichToken call overwrites it with live DexScreener data.
+        mint: ANSEM_MINT,
+        symbol: ANSEM_SYMBOL,
+        name: ANSEM_NAME,
+        decimals: ANSEM_DECIMALS,
         category: "memecoin",
         isWhitelisted: true,
         whitelistedAt: daysAgo(10),
-        isVerified: false,
-        jupiterPriceUsd: "2.18",
-        jupiterPriceUpdatedAt: hoursFromNow(-2),
-      },
-      {
-        mint: "BonkxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxBONK",
-        symbol: "BONK",
-        name: "Bonk",
-        decimals: 5,
-        category: "memecoin",
-        isWhitelisted: true,
-        whitelistedAt: daysAgo(5),
-        isVerified: false,
-        jupiterPriceUsd: "0.0000189",
-        jupiterPriceUpdatedAt: hoursFromNow(-2),
+        isVerified: true,
+        isAdminVerified: true,
+        jupiterPriceUsd: "0.28",
+        jupiterPriceUpdatedAt: hoursFromNow(-1),
+        logoUrl: ANSEM_LOGO_URL,
       },
     ])
     .returning();
@@ -363,25 +359,16 @@ async function main() {
   );
 
   /* ---------------------------------------------------------------- bounties */
-  // Resolve canonicals by current-network mint so devnet seeds reference
-  // devnet USDC, mainnet seeds reference mainnet USDC. `tokens.find(...
-  // .symbol === "USDC")` would pick whichever row was inserted first
-  // (always mainnet in the current ordering) and silently mis-attribute
-  // seed data on devnet.
-  const usdcMint = getCanonicalBySymbol("USDC")!.mint;
-  const solMint = getCanonicalBySymbol("SOL")!.mint;
-  const bntyCanon = getCanonicalBySymbol("BNTY");
-  const usdc = tokens.find((t) => t.mint === usdcMint)!;
-  const sol = tokens.find((t) => t.mint === solMint)!;
-  // BNTY only exists in the mainnet registry. On devnet seeds, the
-  // bounty fixtures fall back to USDC so we don't synthesize a fake
-  // mint that would 404 against the devnet RPC.
-  const bnty = bntyCanon
-    ? tokens.find((t) => t.mint === bntyCanon.mint) ?? usdc
-    : usdc;
-  const wif = tokens.find((t) => t.symbol === "WIF")!;
-  const bonk = tokens.find((t) => t.symbol === "BONK")!;
-  const tokenList = [usdc, sol, bnty, wif, bonk];
+  // Every fixture bounty pays ANSEM — the only reward token the product
+  // supports. The old per-symbol aliases all resolve to the same row so
+  // scenario definitions below stay untouched.
+  const ansem = tokens.find((t) => t.mint === ANSEM_MINT)!;
+  const usdc = ansem;
+  const sol = ansem;
+  const bnty = ansem;
+  const wif = ansem;
+  const bonk = ansem;
+  const tokenList = [ansem];
 
   const emptyRules = {
     mustContainAll: [],

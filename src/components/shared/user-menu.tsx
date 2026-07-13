@@ -16,7 +16,6 @@ import {
   WalletPill,
 } from "@/components/ui/dropdown";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { useEvmWallet } from "@/hooks/useEvmWallet";
 import { formatHandle } from "@/lib/format";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -38,10 +37,7 @@ export type ConnectedUser = {
 
 export function UserMenu({ user }: { user?: ConnectedUser | null }) {
   const router = useRouter();
-  // Both wallet stacks — a user can connect a Solana wallet (for Solana
-  // bounties) and a Monad wallet (for Monad bounties) independently.
   const sol = useWalletConnection();
-  const evm = useEvmWallet();
 
   if (!user) {
     return (
@@ -99,15 +95,6 @@ export function UserMenu({ user }: { user?: ConnectedUser | null }) {
               onDisconnect={() => {
                 void sol.disconnect();
               }}
-            />
-            <WalletStatus
-              label="EVM"
-              hint="Monad · Base"
-              dot="#6366F1"
-              connectedAddress={evm.address}
-              isConnected={evm.isConnected}
-              onConnect={evm.openConnectModal}
-              onDisconnect={() => evm.disconnect()}
             />
           </div>
         </DropdownHeader>

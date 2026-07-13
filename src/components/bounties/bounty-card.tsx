@@ -19,9 +19,6 @@ import {
   formatTokenAmount,
   formatTokenPrice,
 } from "@/lib/format";
-import { CHAIN_LOGOS } from "@/lib/chains/logos";
-import { chainLabel } from "@/lib/chains/evm/config";
-import { TokenChip } from "./token-chip";
 import { SafeTokenAvatar } from "./token-avatar";
 import { TweetEmbed } from "./tweet-embed";
 import { EligibilityBanner } from "./eligibility-banner";
@@ -113,7 +110,6 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <ChainBadge chain={bounty.chain} />
             {isLottery && (
               <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-text">
                 Lottery
@@ -213,26 +209,6 @@ export function BountyCard({ bounty, variant = "feed" }: Props) {
 /* =========================================================================
    Sub-components
    ========================================================================= */
-
-/** Which chain the bounty settles on — logo only, shown on every card so
- *  the feed makes the network obvious at a glance. */
-function ChainBadge({ chain }: { chain: string }) {
-  const label = chainLabel(chain);
-  const logo = CHAIN_LOGOS[chain] ?? CHAIN_LOGOS.solana;
-  return (
-    <span
-      className="grid size-6 place-items-center rounded-full bg-bg-elevated"
-      title={`Settles on ${label}`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={logo}
-        alt={label}
-        className="size-4 rounded-full object-contain"
-      />
-    </span>
-  );
-}
 
 function BountyTokenAvatar({
   symbol,

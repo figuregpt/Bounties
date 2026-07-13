@@ -1,12 +1,13 @@
-# Railway cron setup — Phase 8
+# Railway cron setup
 
-bounties.fm has two scheduled jobs. Railway runs them as separate **Cron
-Service** deployments that each hit one of the Next.js cron endpoints.
+bounties.fm has three scheduled jobs. Railway runs them as separate
+**Cron Service** deployments that each hit one of the Next.js cron
+endpoints.
 
 ## Required environment
 
-Both cron services need the same `CRON_SECRET` that the web service has.
-Set it once on the project and link it to all three services.
+Every cron service needs the same `CRON_SECRET` that the web service
+has. Set it once on the project and link it to all services.
 
 ```
 CRON_SECRET=<long random string, share across web + cron services>
@@ -33,26 +34,33 @@ or raising the `BATCH` constant in `src/app/api/cron/bounty-completion/route.ts`
 | Schedule         | `*/5 * * * *`                                                               |
 | Command          | `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" $PUBLIC_URL/api/cron/refresh-token-prices` |
 
-Pulls fresh DexScreener data for tokens currently used by active
-bounties. Skips anything refreshed in the last 5 minutes, so the
-endpoint is safe to call more often if you want fresher quotes.
+ALWAYS refreshes the $ANSEM row (the $1 creation fee is converted from
+this cached price at launch time — it must never go stale), plus any
+token still referenced by an active legacy bounty. Skips anything
+refreshed in the last 5 minutes, so the endpoint is safe to call more
+often if you want fresher quotes.
 
-## Service 3 — expire-claims (hourly)
+## Service 3 — recover-stuck-claims (every 10 minutes)
 
 | Field            | Value                                                                  |
 | ---------------- | ---------------------------------------------------------------------- |
-| Schedule         | `0 * * * *`                                                            |
-| Command          | `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" $PUBLIC_URL/api/cron/expire-claims` |
+| Schedule         | `*/10 * * * *`                                                         |
+| Command          | `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" $PUBLIC_URL/api/cron/recover-stuck-claims` |
 
-Flips claims past their 48h claim window to `expired`. Reward stays in
-the treasury and routes to the Phase-9 buyback pool.
+Claims stuck in `claiming` (route crashed mid-payout) either recover
+their landed tx hash from the audit log or roll back to `verified` so
+the hunter can retry.
+
+> The old `expire-claims` service is dead — the `/api/cron/expire-claims`
+> route was removed with claim windows. Delete the Railway service if it
+> still exists; it curls a 404 every hour.
 
 ## Local testing
 
 ```
 export CRON_SECRET=dev
 curl -X POST -H "Authorization: Bearer dev" http://localhost:3000/api/cron/bounty-completion
-curl -X POST -H "Authorization: Bearer dev" http://localhost:3000/api/cron/expire-claims
+curl -X POST -H "Authorization: Bearer dev" http://localhost:3000/api/cron/refresh-token-prices
 ```
 
 A 401 means the header didn't match; a 200 + JSON body means the job

@@ -6,7 +6,7 @@ import { UserMenu, type ConnectedUser } from "./user-menu";
 /* ──────────────────────────────────────────────────────────────────────────
    Mobile-only header. Desktop uses <Sidebar /> instead.
 
-   Shows: logo · $BNTY balance pill · user menu (Connect → Avatar dropdown).
+   Shows: logo · $ANSEM balance pill · user menu (Connect → Avatar dropdown).
    ────────────────────────────────────────────────────────────────────────── */
 
 export function Header({ user }: { user?: ConnectedUser | null }) {
@@ -38,7 +38,7 @@ function BalanceChip({ balance }: { balance: number }) {
   if (balance <= 0) return null;
   return (
     <div className="rounded-[var(--radius-pill)] bg-accent-soft px-2.5 py-1 font-mono text-small tabular-nums text-accent-text">
-      {balance.toLocaleString()} $BNTY
+      {balance.toLocaleString()} $ANSEM
     </div>
   );
 }

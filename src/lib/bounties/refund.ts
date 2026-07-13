@@ -82,8 +82,18 @@ export async function processUnclaimedRefund(
     return { kind: "noop", reason: "Pool fully distributed" };
   }
 
-  const chain = isChain(bounty.chain) ? bounty.chain : "solana";
-  const adapter = getChainAdapter(chain);
+  // Historical bounties frozen on a removed chain (monad/base) must not
+  // refund through the Solana treasury — flag for manual settlement.
+  if (!isChain(bounty.chain)) {
+    console.error(
+      `[refund] bounty ${bountyId} is on unsupported chain "${bounty.chain}" — manual settlement required`,
+    );
+    return {
+      kind: "failed",
+      error: `Unsupported chain "${bounty.chain}" — manual settlement required`,
+    };
+  }
+  const adapter = getChainAdapter("solana");
 
   const [creator] = await db
     .select({
@@ -98,21 +108,18 @@ export async function processUnclaimedRefund(
     return { kind: "failed", error: "Creator not found" };
   }
 
-  // The refund must settle on the bounty's chain — resolve the creator's
-  // wallet for THAT chain (Solana falls back to the legacy column). A
-  // Monad bounty refunds to the creator's Monad address, never Solana.
+  // Resolve the creator's Solana wallet (user_wallets row, falling back
+  // to the legacy users.walletAddress column).
   const [creatorWalletRow] = await db
     .select({ address: userWallets.address })
     .from(userWallets)
     .where(
-      and(eq(userWallets.userId, creator.id), eq(userWallets.chain, chain)),
+      and(eq(userWallets.userId, creator.id), eq(userWallets.chain, "solana")),
     )
     .limit(1);
-  const refundWallet =
-    creatorWalletRow?.address ??
-    (chain === "solana" ? creator.walletAddress : null);
+  const refundWallet = creatorWalletRow?.address ?? creator.walletAddress;
   if (!refundWallet) {
-    return { kind: "failed", error: `Creator ${chain} wallet not on file` };
+    return { kind: "failed", error: "Creator Solana wallet not on file" };
   }
 
   const tx = await adapter.sendReward({

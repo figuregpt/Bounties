@@ -1,147 +1,104 @@
 "use client";
 
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
-import { formatTokenPrice, formatCompact } from "@/lib/format";
+import { Switch } from "@/components/ui/switch";
+import { formatTokenPrice } from "@/lib/format";
+import { TokenAvatar } from "@/components/bounties/token-avatar";
+import type { SelectedToken } from "@/components/bounties/create/ansem-token-card";
 import {
-  TokenPicker,
-  type SelectedToken,
-} from "@/components/bounties/create/token-picker";
-import type { Chain } from "@/lib/chains/types";
-import { chainLabel } from "@/lib/chains/evm/config";
-import { chainLogo } from "@/lib/chains/logos";
+  ANSEM_DECIMALS,
+  ANSEM_LOGO_URL,
+  ANSEM_MINT,
+  ANSEM_NAME,
+  ANSEM_SYMBOL,
+} from "@/lib/tokens/ansem";
 
 /**
- * Optional gate: hunters need to hold at least N of a token in their
- * connected wallet before they can pull a slot. Pasting a CA enriches
- * via DexScreener (same path the reward token picker uses) so the
- * creator sees logo, market metadata, and a live USD preview of the
- * threshold they're setting.
+ * Optional gate: hunters need to hold at least N $ANSEM in their
+ * connected wallet before they can pull a slot. The token is fixed —
+ * creators only toggle the gate and pick the minimum balance.
  *
  * Parent owns the persisted shape — pass `value`, react to `onChange`.
- * The TokenPicker's rich SelectedToken lives only in this component's
- * local state; we hand the parent the compact `{ mint, symbol,
- * decimals, minAmount }` shape that lands in EligibilityFilters.
+ * `ansemToken` is the enriched row the create page already fetched for
+ * the reward card; we reuse its live price for the USD preview.
  */
 
 export type HolderRequirementValue = {
-  mint: string;
-  symbol: string;
-  decimals: number;
+  mint: typeof ANSEM_MINT;
+  symbol: typeof ANSEM_SYMBOL;
+  decimals: typeof ANSEM_DECIMALS;
   minAmount: number;
 } | null;
 
 type Props = {
   value: HolderRequirementValue;
   onChange: (next: HolderRequirementValue) => void;
-  /** Bounty's settlement chain — the holder gate must check a balance on
-   *  the SAME chain (a Monad/Base bounty gates on a token on that chain,
-   *  checked against the hunter's wallet there). Drives the picker's
-   *  address format + quick-picks. */
-  chain: Chain;
+  /** Enriched ANSEM row (live price) — null while loading. */
+  ansemToken: SelectedToken | null;
 };
 
-export function HolderRequirementSection({ value, onChange, chain }: Props) {
-  // Cache the rich SelectedToken locally so we can render logo + price.
-  // Parent only persists the compact subset, so we don't lose visuals
-  // when the section re-mounts mid-form.
-  const [enriched, setEnriched] = useState<SelectedToken | null>(null);
+const DEFAULT_MIN_AMOUNT = 1;
 
-  function handleTokenChange(next: SelectedToken | null): void {
-    setEnriched(next);
-    if (!next) {
-      onChange(null);
-      return;
-    }
-    onChange({
-      mint: next.mint,
-      symbol: next.symbol,
-      decimals: next.decimals,
-      minAmount: value?.minAmount ?? 1,
-    });
-  }
-
-  // If the parent already has a persisted value but local enriched is
-  // null (page just mounted), don't fight it — we'll re-enrich on
-  // first edit. Until then we render a minimal summary card.
-  const showPicker = !enriched;
+export function HolderRequirementSection({
+  value,
+  onChange,
+  ansemToken,
+}: Props) {
+  const enabled = value != null;
   const min = value?.minAmount ?? 0;
-  const usd = enriched && min > 0 ? min * enriched.priceUsd : null;
+  const priceUsd = ansemToken?.priceUsd ?? 0;
+  const usd = enabled && min > 0 && priceUsd > 0 ? min * priceUsd : null;
+
+  function setEnabled(next: boolean): void {
+    onChange(
+      next
+        ? {
+            mint: ANSEM_MINT,
+            symbol: ANSEM_SYMBOL,
+            decimals: ANSEM_DECIMALS,
+            minAmount: value?.minAmount ?? DEFAULT_MIN_AMOUNT,
+          }
+        : null,
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[10px] border border-border-subtle bg-bg-base px-4 py-3 text-caption text-text-tertiary">
-        Skip this section if any hunter can claim. Set a token + minimum
-        balance to gate the bounty on wallet holdings.
-      </div>
-
-      <div className="flex items-center gap-1.5 text-caption text-text-tertiary">
-        {chainLogo(chain) && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={chainLogo(chain) as string}
-            alt=""
-            className="size-3.5 rounded-full"
-            aria-hidden
+      <div className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <TokenAvatar
+            logoUrl={ansemToken?.logoUrl ?? ANSEM_LOGO_URL}
+            symbol={ANSEM_SYMBOL}
+            size={36}
+            isAdminVerified={ansemToken?.isAdminVerified}
           />
-        )}
-        Holder token must be on{" "}
-        <span className="font-medium text-text-secondary">
-          {chainLabel(chain)}
-        </span>
-        {" "}— checked against the hunter&apos;s {chainLabel(chain)} wallet.
-      </div>
-
-      {showPicker ? (
-        <TokenPicker
-          selected={null}
-          onChange={handleTokenChange}
-          chain={chain}
-        />
-      ) : (
-        <div className="rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <div className="flex items-center gap-3">
-            <img
-              src={enriched.logoUrl}
-              alt={enriched.symbol}
-              width={36}
-              height={36}
-              className="size-9 rounded-full"
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-text-primary">
-                  {enriched.symbol}
-                </span>
-                <span className="truncate text-caption text-text-tertiary">
-                  {enriched.name}
-                </span>
-              </div>
-              <div className="font-mono text-caption text-text-tertiary tabular-nums">
-                {formatTokenPrice(enriched.priceUsd)} · MCap{" "}
-                {enriched.marketCapUsd
-                  ? formatCompact(enriched.marketCapUsd)
-                  : "—"}
-              </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-text-primary">
+                {ANSEM_SYMBOL}
+              </span>
+              <span className="truncate text-caption text-text-tertiary">
+                {ANSEM_NAME}
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={() => handleTokenChange(null)}
-              className="press text-caption text-text-tertiary hover:text-text-primary"
-            >
-              Change
-            </button>
+            <p className="text-caption text-text-tertiary">
+              Only allow hunters who hold a minimum $ANSEM balance.
+            </p>
           </div>
         </div>
-      )}
+        <Switch
+          checked={enabled}
+          onChange={setEnabled}
+          aria-label="Require hunters to hold ANSEM"
+        />
+      </div>
 
       {value && (
         <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
           <NumberCell
             label="Minimum balance"
             value={value.minAmount}
-            suffix={value.symbol}
+            suffix={ANSEM_SYMBOL}
             onChange={(v) => {
               if (Number.isFinite(v) && v > 0) {
                 onChange({ ...value, minAmount: v });
@@ -155,6 +112,13 @@ export function HolderRequirementSection({ value, onChange, chain }: Props) {
             readOnly
           />
         </div>
+      )}
+
+      {usd != null && (
+        <p className="text-caption text-text-tertiary">
+          Hunters need {min.toLocaleString("en-US")} {ANSEM_SYMBOL} (≈{" "}
+          {formatTokenPrice(usd)}) in their connected wallet to pull a slot.
+        </p>
       )}
     </div>
   );

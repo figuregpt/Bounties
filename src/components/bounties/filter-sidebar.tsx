@@ -1,11 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Filter, RotateCcw, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { CHAIN_LOGOS } from "@/lib/chains/logos";
+import { Filter, RotateCcw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
 import { formatUsd } from "@/lib/format";
 import type { BountyStatus } from "@/types/database";
 import {
@@ -30,18 +26,6 @@ const STATUS_OPTIONS: { label: string; value: BountyStatus }[] = [
   { label: "Active", value: "active" },
   { label: "Completed", value: "completed" },
 ];
-
-/** Canonical chip set. Symbols match `bounties.rewardTokenSymbol`; the
- *  paste-box below adds full mint addresses for arbitrary tokens. */
-const TOKEN_CHIPS: { label: string; symbol: string }[] = [
-  { label: "USDC", symbol: "USDC" },
-  { label: "SOL", symbol: "SOL" },
-  { label: "MON", symbol: "MON" },
-];
-
-/** Solana base58 pubkeys are 32-44 chars in their canonical encoding.
- *  Mint addresses are at the upper end of that range (always 32-byte). */
-const MINT_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export function FilterSidebar({ filters, onChange }: Props) {
   const isDefault = isDefaultFilters(filters);
@@ -81,54 +65,6 @@ export function FilterSidebar({ filters, onChange }: Props) {
             }
           />
         ))}
-      </Group>
-
-      <Group label="Network">
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { value: undefined, label: "All", chain: null },
-              { value: "solana", label: "Solana", chain: "solana" },
-              { value: "monad", label: "Monad", chain: "monad" },
-              { value: "base", label: "Base", chain: "base" },
-            ] as const
-          ).map((o) => {
-            const active = filters.chain === o.value;
-            const logo = o.chain ? CHAIN_LOGOS[o.chain] : null;
-            return (
-              <button
-                key={o.label}
-                type="button"
-                onClick={() => onChange({ ...filters, chain: o.value })}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-3 py-1.5 text-small transition-colors",
-                  active
-                    ? "border-accent-primary bg-accent-soft text-accent-text"
-                    : "border-border-default text-text-tertiary hover:text-text-secondary",
-                )}
-              >
-                {logo && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={logo}
-                    alt=""
-                    className="size-4 rounded-full object-contain"
-                  />
-                )}
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-      </Group>
-
-      <Group label="Reward token">
-        <TokenFilter
-          selected={filters.rewardTokens}
-          onChange={(rewardTokens) =>
-            onChange({ ...filters, rewardTokens })
-          }
-        />
       </Group>
 
       <Group label="Min per hunter">
@@ -255,128 +191,9 @@ function isDefaultFilters(f: DiscoverFilters): boolean {
   return (
     f.statuses.length === 1 &&
     f.statuses[0] === "active" &&
-    f.rewardTokens.length === 0 &&
     f.minRewardPerHunterUsd === 0 &&
     f.showIneligible === DEFAULT_FILTERS.showIneligible &&
     f.showFilled === DEFAULT_FILTERS.showFilled &&
     f.sortBy === "newest"
-  );
-}
-
-/**
- * Reward-token picker. Two canonical chips (USDC, SOL) + a paste box
- * for arbitrary mint addresses. Selected mints render as chips below
- * the input with an X to remove. The server matches by symbol OR
- * mint, so canonical chips and pasted mints share one list.
- */
-function TokenFilter({
-  selected,
-  onChange,
-}: {
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const toggleSymbol = (sym: string) => {
-    onChange(
-      selected.includes(sym)
-        ? selected.filter((s) => s !== sym)
-        : [...selected, sym],
-    );
-  };
-  const tryAddMint = () => {
-    const v = draft.trim();
-    if (!v) return;
-    if (!MINT_PATTERN.test(v)) {
-      setError("That doesn't look like a Solana mint address.");
-      return;
-    }
-    if (selected.includes(v)) {
-      setError("Already added.");
-      return;
-    }
-    onChange([...selected, v]);
-    setDraft("");
-    setError(null);
-  };
-
-  // Custom-mint chips = anything in selected that isn't one of the
-  // canonical symbols. Renders below the input so users see what they
-  // pasted and can pop them off.
-  const canonicalSet = new Set(TOKEN_CHIPS.map((t) => t.symbol));
-  const customMints = selected.filter((s) => !canonicalSet.has(s));
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-1.5">
-        {TOKEN_CHIPS.map((t) => {
-          const active = selected.includes(t.symbol);
-          return (
-            <button
-              key={t.symbol}
-              type="button"
-              onClick={() => toggleSymbol(t.symbol)}
-              className={cn(
-                "press rounded-[var(--radius-pill)] px-3 py-1 text-caption font-medium transition-colors",
-                active
-                  ? "bg-accent-soft text-accent-text"
-                  : "bg-bg-elevated text-text-secondary hover:text-text-primary",
-              )}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-1.5">
-        <Input
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              tryAddMint();
-            }
-          }}
-          onBlur={() => {
-            if (draft.trim()) tryAddMint();
-          }}
-          placeholder="Paste mint address or symbol"
-          className="h-9 text-small"
-        />
-        {error && <p className="text-caption text-warning">{error}</p>}
-      </div>
-
-      {customMints.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {customMints.map((mint) => (
-            <li
-              key={mint}
-              className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-accent-soft px-2.5 py-1 text-caption text-accent-text"
-            >
-              <span className="font-mono tabular-nums" data-numeric>
-                {mint.slice(0, 4)}…{mint.slice(-4)}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  onChange(selected.filter((s) => s !== mint))
-                }
-                aria-label={`Remove ${mint}`}
-                className="press grid size-4 place-items-center rounded-full text-accent-text/70 hover:text-accent-text"
-              >
-                <X className="size-3" strokeWidth={2.5} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

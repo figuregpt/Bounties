@@ -6,22 +6,14 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatTokenPrice } from "@/lib/format";
 import {
-  TokenPicker,
+  AnsemTokenCard,
   type SelectedToken,
-} from "@/components/bounties/create/token-picker";
-import {
-  MIN_REWARD_PER_HUNTER_USD,
-  MIN_TOTAL_POOL_USD,
-} from "@/lib/validation/bounty";
-import type { Chain } from "@/lib/chains/types";
-import { SUPPORTED_CHAINS } from "@/lib/chains/types";
-import { chainLabel } from "@/lib/chains/evm/config";
-import { chainLogo } from "@/lib/chains/logos";
+} from "@/components/bounties/create/ansem-token-card";
+import { MIN_REWARD_PER_HUNTER_ANSEM } from "@/lib/validation/bounty";
 
 /**
- * Reward section: token picker (paste CA + quick picks) + amount
- * calculator. Two independent reward-floor indicators live here so
- * the creator sees pass/fail status for each before hitting submit.
+ * Reward section: fixed $ANSEM token card + amount calculator with the
+ * min-1-ANSEM-per-winner indicator.
  *
  * Parent owns all values; the section is a pure controlled component.
  */
@@ -32,22 +24,16 @@ export type RewardMode = "per_hunter" | "total_pool";
 
 type Props = {
   token: TokenOption | null;
+  tokenLoading: boolean;
+  tokenError: string | null;
+  onTokenRetry: () => void;
   rewardPerHunter: number;
   maxHunters: number;
   mode: RewardMode;
-  /** Settlement chain. Switching it clears the selected token (addresses
-   *  and prices don't carry across chains). */
-  chain: Chain;
-  /** Networks the creator may pick. An EVM chain is only listed once it's
-   *  configured for real settlement on the server. Defaults to all
-   *  supported chains when omitted. */
-  availableChains?: Chain[];
   /** True for `pool_lottery` distribution: switches the UI to ask
    *  for "Total prize pool" and "Number of winners" directly, since
    *  per-hunter × slots framing confuses the lottery flow. */
   isLottery?: boolean;
-  onTokenChange: (next: TokenOption | null) => void;
-  onChainChange: (next: Chain) => void;
   onPerHunterChange: (next: number) => void;
   onMaxHuntersChange: (next: number) => void;
   onModeChange: (next: RewardMode) => void;
@@ -55,14 +41,13 @@ type Props = {
 
 export function RewardSection({
   token,
+  tokenLoading,
+  tokenError,
+  onTokenRetry,
   rewardPerHunter,
   maxHunters,
   mode,
-  chain,
-  availableChains,
   isLottery = false,
-  onTokenChange,
-  onChainChange,
   onPerHunterChange,
   onMaxHuntersChange,
   onModeChange,
@@ -76,33 +61,21 @@ export function RewardSection({
     () => (token ? rewardPerHunter * token.priceUsd : null),
     [rewardPerHunter, token],
   );
-  const symbol = token?.symbol ?? "";
-  // Two independent reward floors. The form is only valid when both
-  // pass. We surface them as side-by-side indicators so the creator
-  // sees exactly which knob to adjust.
-  const perHunterPasses =
-    perHunterUsd != null && perHunterUsd >= MIN_REWARD_PER_HUNTER_USD;
-  const totalPoolPasses =
-    totalUsd != null && totalUsd >= MIN_TOTAL_POOL_USD;
+  const symbol = token?.symbol ?? "ANSEM";
+  // One token-denominated floor: every winner earns at least 1 ANSEM.
+  const perHunterPasses = rewardPerHunter >= MIN_REWARD_PER_HUNTER_ANSEM;
 
   return (
     <div className="space-y-5">
-      {/* Network -------------------------------------------------------- */}
-      <div>
-        <h3 className="mb-2 text-small font-medium text-text-primary">
-          Network
-        </h3>
-        <ChainToggle
-          chain={chain}
-          chains={availableChains ?? SUPPORTED_CHAINS}
-          onChange={onChainChange}
-        />
-      </div>
-
-      {/* Token picker --------------------------------------------------- */}
+      {/* Fixed reward token ---------------------------------------------- */}
       <div>
         <h3 className="mb-2 text-small font-medium text-text-primary">Token</h3>
-        <TokenPicker selected={token} onChange={onTokenChange} chain={chain} />
+        <AnsemTokenCard
+          token={token}
+          loading={tokenLoading}
+          error={tokenError}
+          onRetry={onTokenRetry}
+        />
       </div>
 
       {/* Mode tabs (fixed_slot only — lottery has its own simplified UI) */}
@@ -208,72 +181,17 @@ export function RewardSection({
             {totalUsd != null ? formatTokenPrice(totalUsd) : "—"}
           </span>
         </div>
-        {token && perHunterUsd != null && perHunterUsd > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <FloorIndicator
-              passes={perHunterPasses}
-              passLabel={`${isLottery ? "Each winner" : "Per hunter"} ≈ ${formatTokenPrice(perHunterUsd)} (min $${MIN_REWARD_PER_HUNTER_USD})`}
-              failLabel={`${isLottery ? "Each winner" : "Per hunter"} must be at least $${MIN_REWARD_PER_HUNTER_USD} — currently ≈ ${formatTokenPrice(perHunterUsd)}`}
-            />
-            <FloorIndicator
-              passes={totalPoolPasses}
-              passLabel={`Total pool ≈ ${formatTokenPrice(totalUsd)} (min $${MIN_TOTAL_POOL_USD})`}
-              failLabel={`Total pool must be at least $${MIN_TOTAL_POOL_USD} — currently ≈ ${formatTokenPrice(totalUsd)}. ${isLottery ? "Raise the prize pool or lower winner count." : "Increase per-hunter amount or slots."}`}
-            />
-          </div>
-        )}
+        <FloorIndicator
+          passes={perHunterPasses}
+          passLabel={`${isLottery ? "Each winner" : "Per hunter"} · ${rewardPerHunter.toLocaleString(undefined, { maximumFractionDigits: 6 })} ANSEM (min ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM)`}
+          failLabel={`${isLottery ? "Each winner" : "Per hunter"} must be at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM — currently ${rewardPerHunter.toLocaleString(undefined, { maximumFractionDigits: 6 })} ANSEM${isLottery ? ". Raise the prize pool or lower winner count." : ""}`}
+        />
         <p className="text-caption text-text-tertiary">
           {isLottery
-            ? `Lottery bounties have two minimums: $${MIN_TOTAL_POOL_USD} total prize pool and $${MIN_REWARD_PER_HUNTER_USD} per winner. Platform fee · 5% comes from each winning claim, not from the pool you escrow now.`
-            : `Bounties have two minimums: $${MIN_TOTAL_POOL_USD} total pool and $${MIN_REWARD_PER_HUNTER_USD} per hunter. Platform fee · 5% comes from each claim, not from the pool you escrow now.`}
+            ? `Every winner must earn at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM — a 1000 ANSEM pool pays at most 1000 winners. Platform fee · 5% comes from each winning claim, not from the pool you escrow now.`
+            : `Every hunter must earn at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM. Platform fee · 5% comes from each claim, not from the pool you escrow now.`}
         </p>
       </div>
-    </div>
-  );
-}
-
-/** Solana / Monad / Base segmented toggle. Picking a network clears the
- *  token. Chains + logos are derived from the registry, so a new chain
- *  shows up here automatically. */
-function ChainToggle({
-  chain,
-  chains,
-  onChange,
-}: {
-  chain: Chain;
-  chains: readonly Chain[];
-  onChange: (next: Chain) => void;
-}) {
-  return (
-    <div className="inline-flex rounded-[var(--radius-button)] border border-border-default bg-bg-surface p-1">
-      {chains.map((value) => {
-        const active = chain === value;
-        const logo = chainLogo(value);
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() => onChange(value)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-small font-medium transition-colors",
-              active
-                ? "bg-bg-elevated text-text-primary"
-                : "text-text-tertiary hover:text-text-secondary",
-            )}
-          >
-            {logo && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logo}
-                alt=""
-                className="size-4 rounded-full"
-                aria-hidden
-              />
-            )}
-            {chainLabel(value)}
-          </button>
-        );
-      })}
     </div>
   );
 }

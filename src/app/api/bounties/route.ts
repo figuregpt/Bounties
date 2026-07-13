@@ -13,11 +13,13 @@ import type {
   TweetCachedData,
 } from "@/types/database";
 import {
+  BOUNTY_CREATION_FEE_USD,
   CreateBountySchema,
   extractTweetId,
-  MIN_REWARD_PER_HUNTER_USD,
-  MIN_TOTAL_POOL_USD,
+  MIN_REWARD_PER_HUNTER_ANSEM,
 } from "@/lib/validation/bounty";
+import { ANSEM_MINT } from "@/lib/tokens/ansem";
+import { currentNetwork } from "@/lib/tokens/canonical";
 import { serializeZodIssues } from "@/lib/validation/field-labels";
 import { getTweetById } from "@/lib/twitter/client";
 import {
@@ -28,7 +30,6 @@ import {
   TokenNotFoundError,
   TokenPriceUnavailableError,
 } from "@/lib/tokens/enrichment";
-import { currentNetwork } from "@/lib/tokens/canonical";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -56,17 +57,6 @@ const QuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
-  rewardTokens: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : undefined,
-    ),
   statuses: z
     .string()
     .optional()
@@ -81,7 +71,6 @@ const QuerySchema = z.object({
   minRewardPerHunterUsd: z.coerce.number().min(0).optional(),
   q: z.string().trim().min(1).optional(),
   endingWithinHours: z.coerce.number().int().min(1).optional(),
-  chain: z.enum(["solana", "monad", "base"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -99,10 +88,8 @@ export async function GET(req: NextRequest) {
     user,
     {
       sortBy: q.sortBy,
-      chain: q.chain,
       showIneligible: q.showIneligible,
       showFilled: q.showFilled,
-      rewardTokens: q.rewardTokens,
       // The "discover" feed honors whatever the user toggled — usually
       // "active" only, but they can swap to "completed" to browse the
       // archive. Empty/undefined falls back to active (see buildWhere).
@@ -171,12 +158,13 @@ export async function POST(req: NextRequest) {
   }
   const input = parsed.data;
 
-  /* ---- Resolve reward token + enforce $5 floor ----------------------- */
+  /* ---- Resolve the ANSEM reward token -------------------------------- */
+  // The schema already pins rewardTokenMint to ANSEM; enrich by the
+  // constant (not client input) so the price/logo/decimals come from
+  // our own cache + DexScreener, never from the request body.
   let tokenRow;
   try {
-    tokenRow = await enrichToken(input.rewardTokenMint, {
-      chain: input.rewardChain,
-    });
+    tokenRow = await enrichToken(ANSEM_MINT);
   } catch (err) {
     if (err instanceof TokenFlaggedError) {
       return NextResponse.json(
@@ -244,41 +232,22 @@ export async function POST(req: NextRequest) {
 
   const rewardUsdPerHunter = input.rewardPerHunter * tokenRow.priceUsd;
   const totalPoolUsd = rewardUsdPerHunter * input.maxHunters;
-  // Two independent reward floors. We accumulate violations rather
-  // than short-circuit so the create form can surface both at once if
-  // the creator's numbers fail both checks.
-  //
-  // Devnet bypass: no real money at stake, and most devnet tokens
-  // don't have a tracked price (they aren't on DexScreener). Skip the
-  // floor entirely so testers can launch arbitrarily small bounties
-  // with any mint. Mainnet keeps the full check.
-  const floorIssues: Array<{ path: string; code: string; message: string }> =
-    [];
-  if (currentNetwork() !== "devnet") {
-    if (rewardUsdPerHunter < MIN_REWARD_PER_HUNTER_USD) {
-      floorIssues.push({
-        path: "rewardPerHunter",
-        code: "below_min_per_hunter",
-        message: `Per-hunter reward must be at least $${MIN_REWARD_PER_HUNTER_USD} USD (currently ≈ $${rewardUsdPerHunter.toFixed(2)})`,
-      });
-    }
-    if (totalPoolUsd < MIN_TOTAL_POOL_USD) {
-      floorIssues.push({
-        // Either knob fixes this — point at rewardPerHunter so the form
-        // highlight is consistent with the per-hunter floor.
-        path: "rewardPerHunter",
-        code: "below_min_total_pool",
-        message: `Total reward pool must be at least $${MIN_TOTAL_POOL_USD} USD (currently ≈ $${totalPoolUsd.toFixed(2)})`,
-      });
-    }
-  }
-  if (floorIssues.length > 0) {
+  // Single token-denominated floor: every winner earns at least 1 ANSEM.
+  // (The zod schema enforces this too; re-checking here keeps the API
+  // safe against callers that bypass the shared schema.)
+  if (input.rewardPerHunter < MIN_REWARD_PER_HUNTER_ANSEM) {
     return NextResponse.json(
       {
         ok: false,
         errorCode: "validation_failed",
         error: "Some fields need attention",
-        issues: floorIssues,
+        issues: [
+          {
+            path: "rewardPerHunter",
+            code: "below_min_per_hunter",
+            message: `Each winner must earn at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM`,
+          },
+        ],
       },
       { status: 400 },
     );
@@ -355,6 +324,29 @@ export async function POST(req: NextRequest) {
   const platformFeeBps = 500;
   const platformFeeAmount = (totalPool * platformFeeBps) / 10_000;
 
+  // Snapshot the $1-in-ANSEM creation fee NOW, on the same price the
+  // client just previewed. The escrow tx bakes this exact amount and
+  // the launch route verifies against the stored value — deriving it
+  // twice from a live price left a drift window where a routine ANSEM
+  // dip stranded the creator's already-sent escrow. Devnet: no real
+  // revenue at stake, fee stays 0.
+  const isDevnet = currentNetwork() === "devnet";
+  if (!isDevnet && tokenRow.priceUsd <= 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Reward token has no tracked price — can't compute creation fee",
+        errorCode: "token_no_price",
+      },
+      { status: 422 },
+    );
+  }
+  const creationFeeAmount =
+    isDevnet || tokenRow.priceUsd <= 0
+      ? 0
+      : BOUNTY_CREATION_FEE_USD / tokenRow.priceUsd;
+
   const slug = await generateUniqueSlug({
     seed: tweetAuthorHandle || input.rewardTokenSymbol,
   });
@@ -366,7 +358,7 @@ export async function POST(req: NextRequest) {
       creatorUserId: user.id,
       slug,
       status: "draft",
-      chain: input.rewardChain,
+      chain: "solana",
       tweetId,
       tweetUrl: input.tweetUrl,
       tweetAuthorTwitterId,
@@ -409,6 +401,8 @@ export async function POST(req: NextRequest) {
       totalPoolUsd: totalPoolUsd.toFixed(6),
       platformFeeBps,
       platformFeeAmount: platformFeeAmount.toString(),
+      creationFeeAmount: creationFeeAmount.toString(),
+      creationFeeAmountUsd: (isDevnet ? 0 : BOUNTY_CREATION_FEE_USD).toFixed(6),
       distributionModel: input.distributionModel,
       distributionConfig: null,
       eligibilityFilters: input.eligibilityFilters,
@@ -435,9 +429,9 @@ export async function POST(req: NextRequest) {
     .returning();
 
   // Fire-and-forget popularity tracking. Failure here shouldn't fail
-  // the create — worst case the quick-picks ranking is slightly off.
+  // the create — worst case analytics counters lag.
   try {
-    await incrementTokenUsage(tokenRow.mint, input.rewardChain);
+    await incrementTokenUsage(tokenRow.mint);
   } catch (err) {
     console.warn(
       "[POST /api/bounties] incrementTokenUsage failed:",
@@ -450,7 +444,11 @@ export async function POST(req: NextRequest) {
     bounty: {
       id: created.id,
       slug: created.slug,
+      // The client MUST build the escrow tx from these two values (not
+      // its own float math) — they're the exact amounts the launch
+      // route verifies on-chain.
       totalPool: created.totalPool,
+      creationFeeAmount: created.creationFeeAmount,
       totalPoolUsd: created.totalPoolUsd,
       rewardTokenMint: created.rewardTokenMint,
       rewardTokenSymbol: created.rewardTokenSymbol,

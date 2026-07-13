@@ -17,7 +17,6 @@ import {
 } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { bounties, claims, tokens, users } from "@/lib/db/schema";
-import { isChain } from "@/lib/chains/types";
 
 /**
  * Claim statuses that count toward "X of Y slots claimed". A claim
@@ -111,9 +110,6 @@ export type BountySortBy =
 
 export type BountyFilters = {
   status?: BountyStatus | BountyStatus[];
-  /** Settlement chain filter — 'solana' | 'monad'. Undefined = all. */
-  chain?: string;
-  rewardTokens?: string[];
   minRewardPerHunterUsd?: number;
   categories?: BountyCategory[];
   searchQuery?: string;
@@ -380,22 +376,6 @@ function buildWhere(filters: BountyFilters): SQL | undefined {
         )`,
       );
     }
-  }
-
-  if (filters.chain && isChain(filters.chain)) {
-    conds.push(eq(bounties.chain, filters.chain));
-  }
-
-  if (filters.rewardTokens && filters.rewardTokens.length > 0) {
-    // Tokens can be specified by SYMBOL (USDC, SOL — canonical chips)
-    // OR by full base58 MINT address (pasted into the filter UI).
-    // Match either side so the picker stays flexible.
-    conds.push(
-      or(
-        inArray(bounties.rewardTokenSymbol, filters.rewardTokens),
-        inArray(bounties.rewardTokenMint, filters.rewardTokens),
-      )!,
-    );
   }
 
   if (

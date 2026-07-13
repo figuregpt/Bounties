@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { getCanonicalBySymbol } from "@/lib/tokens/canonical";
+import {
+  ANSEM_DECIMALS,
+  ANSEM_MINT,
+  ANSEM_SYMBOL,
+  MIN_REWARD_PER_HUNTER_ANSEM,
+} from "@/lib/tokens/ansem";
 
 /**
  * Zod schema for the create-bounty form. Used both client-side
@@ -28,23 +33,15 @@ export const BOUNTY_CREATION_FEE_USD = 1;
 export const CREATION_FEE_USD = BOUNTY_CREATION_FEE_USD;
 
 /**
- * Two independent minimum-reward floors. Both must pass for the
- * bounty to launch — `perHunter × maxHunters = totalPool`, so the
- * thresholds gate two different abuse vectors:
- *
- *   • Per-hunter floor — protects a hunter's time on any single
- *     verification. Below $0.50 even fast hunters can't earn enough to
- *     cover the cognitive cost of figuring out the bounty.
- *
- *   • Total-pool floor — protects the platform from spam launches.
- *     A creator setting up 100 slots × $0.50 = $50 is a real campaign;
- *     1 slot × $0.50 = $0.50 is noise.
+ * Minimum reward per winner: 1 ANSEM, denominated in token units (the
+ * old USD floors are gone — at ANSEM prices they'd contradict the
+ * 1-ANSEM rule). `perHunter × maxHunters = totalPool`, so a
+ * 1000-ANSEM pool can pay at most 1000 winners.
  *
  * Enforced server-side in [POST /api/bounties] AND client-side in the
  * create form so the launch button reflects validity live.
  */
-export const MIN_REWARD_PER_HUNTER_USD = 0.5;
-export const MIN_TOTAL_POOL_USD = 10;
+export { MIN_REWARD_PER_HUNTER_ANSEM } from "@/lib/tokens/ansem";
 
 export const DISTRIBUTION_MODELS = [
   "fixed_slot",
@@ -204,18 +201,19 @@ const EligibilityFiltersSchema = z.object({
     .enum(REPUTATION_TIERS, { message: "Pick a reputation tier" })
     .nullable(),
   smartFollowers: SmartFollowersSchema.nullable().default(null),
+  // Holder gate is ANSEM-only: mint/symbol/decimals are pinned so a
+  // stale or tampered client can't gate on another token. Creators only
+  // choose the minimum balance.
   holderRequirement: z
     .object({
-      mint: z
-        .string()
-        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, {
-          message: "Looks like an invalid Solana mint",
-        }),
+      mint: z.literal(ANSEM_MINT, {
+        message: "Holder requirement token is fixed to $ANSEM",
+      }),
       minAmount: z
         .number()
         .positive({ message: "Minimum balance must be positive" }),
-      symbol: z.string().min(1).max(20),
-      decimals: z.number().int().min(0).max(18),
+      symbol: z.literal(ANSEM_SYMBOL),
+      decimals: z.literal(ANSEM_DECIMALS),
     })
     .nullable()
     .default(null),
@@ -252,31 +250,20 @@ export const CreateBountySchema = z.object({
   actionConfig: ActionConfigSchema,
 
   // Reward --------------------------------------------------------------
-  /** Settlement chain. Drives which wallet stack escrows the pool and
-   *  which ChainAdapter verifies / pays out. Defaults to solana so
-   *  existing clients that don't send it keep working. The token picker
-   *  enforces address format per chain (base58 for solana, 0x for the EVM
-   *  chains monad / base). */
-  rewardChain: z.enum(["solana", "monad", "base"]).default("solana"),
-  rewardTokenMint: z
-    .string()
-    // base58 Solana mints are 32–44 chars; 0x EVM contracts are 42 — both
-    // fit this width. Exact per-chain format is enforced by the picker /
-    // the chain adapter, not here.
-    .min(32, { message: "Reward token mint looks invalid" })
-    .max(44, { message: "Reward token mint looks invalid" }),
-  rewardTokenSymbol: z
-    .string()
-    .min(1, { message: "Pick a reward token" })
-    .max(20, { message: "Token symbol is too long" }),
-  rewardTokenDecimals: z
-    .number()
-    .int({ message: "Token decimals must be a whole number" })
-    .min(0, { message: "Token decimals can't be negative" })
-    .max(18, { message: "Token decimals is capped at 18" }),
+  // Reward token is fixed to $ANSEM on Solana. The literals keep old
+  // clients honest — anything else fails validation instead of silently
+  // creating a differently-denominated bounty. The server re-canonicalizes
+  // from the enrichment row regardless.
+  rewardTokenMint: z.literal(ANSEM_MINT, {
+    message: "Rewards are paid in $ANSEM only",
+  }),
+  rewardTokenSymbol: z.literal(ANSEM_SYMBOL),
+  rewardTokenDecimals: z.literal(ANSEM_DECIMALS),
   rewardPerHunter: z
     .number()
-    .positive({ message: "Reward must be greater than 0" }),
+    .min(MIN_REWARD_PER_HUNTER_ANSEM, {
+      message: `Each winner must earn at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM`,
+    }),
   rewardPerHunterUsd: z
     .number()
     .min(0, { message: "USD value can't be negative" })
@@ -335,17 +322,10 @@ export function extractTweetId(url: string): string | null {
 }
 
 /** Default form values — used by react-hook-form's `defaultValues`.
- *  The reward-token default resolves through the network-aware
- *  canonical map so devnet builds prefill devnet USDC's mint. */
+ *  The reward token is always $ANSEM. */
 export function defaultCreateBountyValues(
   defaults: Partial<CreateBountyInput> = {},
 ): CreateBountyInput {
-  // USDC is canonical in every supported network — getCanonicalBySymbol
-  // is guaranteed to return a row. The non-null assertion below means a
-  // missing canonical surfaces immediately as a developer error instead
-  // of silently falling back to a different network's mint (the bug
-  // that drove the Phase 9A "mainnet USDC on devnet" incident).
-  const usdc = getCanonicalBySymbol("USDC")!;
   return {
     tweetUrl: "",
     actionConfig: {
@@ -365,12 +345,11 @@ export function defaultCreateBountyValues(
         rules: emptyTextRules(),
       },
     },
-    rewardChain: "solana",
-    rewardTokenMint: usdc.mint,
-    rewardTokenSymbol: usdc.symbol,
-    rewardTokenDecimals: usdc.decimals,
+    rewardTokenMint: ANSEM_MINT,
+    rewardTokenSymbol: ANSEM_SYMBOL,
+    rewardTokenDecimals: ANSEM_DECIMALS,
     rewardPerHunter: 1,
-    rewardPerHunterUsd: 1,
+    rewardPerHunterUsd: null,
     maxHunters: 100,
     eligibilityFilters: {
       minFollowers: null,

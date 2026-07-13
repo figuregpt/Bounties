@@ -69,9 +69,27 @@ export async function POST(req: NextRequest) {
 
   for (const claim of stuck) {
     try {
-      // Settle the recovery on the claim's own chain.
-      const chain = isChain(claim.chain) ? claim.chain : "solana";
-      const adapter = getChainAdapter(chain);
+      // Historical claims frozen on a removed chain (monad/base) can't
+      // be recovered through the Solana adapter. Release them back to
+      // 'verified' (claim-reward now rejects them BEFORE reserving, so
+      // they can't re-wedge) — leaving them in 'claiming' would occupy
+      // batch slots and spam this log forever.
+      if (!isChain(claim.chain)) {
+        console.error(
+          `[recover-stuck-claims] claim ${claim.id} is on unsupported chain "${claim.chain}" — released to verified; manual settlement required`,
+        );
+        await db
+          .update(claims)
+          .set({
+            status: "verified",
+            claimAttemptedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(claims.id, claim.id));
+        released.push({ id: claim.id, reason: "unsupported_chain" });
+        continue;
+      }
+      const adapter = getChainAdapter("solana");
       // Defense-in-depth: if the route handler crashed AFTER sendReward
       // resolved on-chain but BEFORE writing claim_tx_hash, the DB row
       // still has claim_tx_hash=null. sendReward writes an audit_log

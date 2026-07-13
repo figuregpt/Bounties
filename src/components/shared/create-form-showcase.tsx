@@ -163,22 +163,12 @@ export function CreateFormShowcase() {
         <FormSection step={4} title="Reward section" complete>
           <RewardSection
             token={token}
+            tokenLoading={false}
+            tokenError={null}
+            onTokenRetry={() => setToken(null)}
             rewardPerHunter={form.rewardPerHunter}
             maxHunters={form.maxHunters}
             mode={rewardMode}
-            onTokenChange={(t) => {
-              setToken(t);
-              patch({
-                rewardTokenMint: t?.mint ?? "",
-                rewardTokenSymbol: t?.symbol ?? "",
-                rewardTokenDecimals: t?.decimals ?? 0,
-                rewardPerHunterUsd: t
-                  ? form.rewardPerHunter * t.priceUsd
-                  : null,
-              });
-            }}
-            chain="solana"
-            onChainChange={() => {}}
             onPerHunterChange={(v) => patch({ rewardPerHunter: v })}
             onMaxHuntersChange={(v) => patch({ maxHunters: v })}
             onModeChange={setRewardMode}

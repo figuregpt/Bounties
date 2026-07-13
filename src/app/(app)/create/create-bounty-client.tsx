@@ -1,26 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, Wallet } from "lucide-react";
 import { PublicKey } from "@solana/web3.js";
-import { erc20Abi } from "viem";
-import {
-  useConfig,
-  useSendTransaction,
-  useSwitchChain,
-  useWriteContract,
-} from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
-import {
-  EVM_CHAINS,
-  isEvmChain,
-  type EvmChainKey,
-} from "@/lib/chains/evm/config";
-import type { Chain } from "@/lib/chains/types";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { useEvmWallet } from "@/hooks/useEvmWallet";
 import { FormSection } from "@/components/ui/form-section";
 import {
   sectionForPath,
@@ -51,29 +36,28 @@ import { formatUsd } from "@/lib/format";
 import {
   BOUNTY_CREATION_FEE_USD,
   defaultCreateBountyValues,
-  MIN_REWARD_PER_HUNTER_USD,
-  MIN_TOTAL_POOL_USD,
+  MIN_REWARD_PER_HUNTER_ANSEM,
   type CreateBountyInput,
   type DurationHours,
 } from "@/lib/validation/bounty";
+import { ANSEM_MINT } from "@/lib/tokens/ansem";
 import {
   buildEscrowTransaction,
-  solToLamports,
   toRawAmount,
   type EscrowMode,
 } from "@/lib/solana/escrow";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Create-bounty client form.
+   Create-bounty client form — Solana + $ANSEM only.
 
-   State management is plain `useState` — react-hook-form is overkill for
-   this shape and the live preview already re-renders on every change.
-   Validation runs client-side just before submit by leaning on the
-   server's zod schema (mirrored in `defaultCreateBountyValues`).
+   The reward token is fixed: on mount we enrich the ANSEM mint (live
+   price + logo from our cache/DexScreener) and every amount in the form
+   is denominated in ANSEM. The $1 creation fee is converted to ANSEM
+   from the same price.
 
    Submit flow:
      1. POST /api/bounties → draft created, slug returned
-     2. (devnet/mainnet only) build + sign + send escrow tx via Privy
+     2. (devnet/mainnet only) build + sign + send SPL escrow tx
      3. POST /api/bounties/{slug}/launch with the tx signature →
         bounty activated, redirect to /bounties/{slug}
    ────────────────────────────────────────────────────────────────────────── */
@@ -99,11 +83,6 @@ type Props = {
    *  becomes two transfers (pool → treasury, creation fee → revenue).
    *  Null means fees stay in the treasury (legacy mode). */
   revenueAddress: string | null;
-  /** EVM treasury addresses per chain (monad, base, …). Null when that
-   *  chain's `${PREFIX}_TREASURY_WALLET_PUBLIC_KEY` isn't configured. */
-  evmTreasuries: Record<EvmChainKey, string | null>;
-  /** EVM escrow modes per chain — `mock` skips the on-chain transfer. */
-  evmEscrowModes: Record<EvmChainKey, "mock" | "testnet" | "mainnet">;
 };
 
 export function CreateBountyClient({
@@ -111,8 +90,6 @@ export function CreateBountyClient({
   escrowMode,
   treasuryAddress,
   revenueAddress,
-  evmTreasuries,
-  evmEscrowModes,
 }: Props) {
   const router = useRouter();
   const {
@@ -123,30 +100,15 @@ export function CreateBountyClient({
     sendTransaction,
     openConnectModal,
   } = useWalletConnection();
-  // EVM wallet + tx senders. No-op until an EVM bounty is built.
-  const evm = useEvmWallet();
-  const { sendTransactionAsync } = useSendTransaction();
-  const { writeContractAsync } = useWriteContract();
-  const { switchChainAsync } = useSwitchChain();
-  const wagmiConfig = useConfig();
-  // Networks the creator can actually pick. Solana is always available;
-  // an EVM chain only shows once it's configured for real / testnet
-  // settlement (escrow mode ≠ mock AND a treasury is set) — otherwise a
-  // creator could "fund" a bounty that escrows nothing. Base appears here
-  // automatically as soon as its BASE_* env lands on the server.
-  const availableChains = useMemo<Chain[]>(() => {
-    const evm = (Object.keys(evmEscrowModes) as EvmChainKey[]).filter(
-      (k) => evmEscrowModes[k] !== "mock" && evmTreasuries[k],
-    );
-    return ["solana", ...evm];
-  }, [evmEscrowModes, evmTreasuries]);
   const [form, setForm] = useState<CreateBountyInput>(() =>
     defaultCreateBountyValues(),
   );
-  // Phase 8.5: no default token — creator must pick or paste a mint
-  // before the launch button enables. The TokenPicker handles its own
-  // loading + error states; we just store the resolved row here.
+  // The fixed ANSEM token, enriched on mount for live price/logo. The
+  // launch button stays disabled until it resolves — the fee conversion
+  // and USD previews need a price.
   const [token, setToken] = useState<TokenOption | null>(null);
+  const [tokenLoading, setTokenLoading] = useState(true);
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [tweetResolved, setTweetResolved] =
     useState<TweetResolveResult | null>(null);
   const [rewardMode, setRewardMode] = useState<RewardMode>("per_hunter");
@@ -166,49 +128,42 @@ export function CreateBountyClient({
     [],
   );
 
-  const onTokenChange = (next: TokenOption | null) => {
-    setToken(next);
-    if (!next) {
-      patch({
-        rewardTokenMint: "",
-        rewardTokenSymbol: "",
-        rewardTokenDecimals: 0,
-        rewardPerHunterUsd: null,
+  const loadAnsem = useCallback(async () => {
+    setTokenLoading(true);
+    setTokenError(null);
+    try {
+      const res = await fetch("/api/tokens/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mintAddress: ANSEM_MINT }),
       });
-      return;
+      const body = (await res.json()) as {
+        ok: boolean;
+        token?: TokenOption;
+        error?: string;
+      };
+      if (!res.ok || !body.ok || !body.token) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setToken(body.token);
+    } catch (err) {
+      setTokenError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTokenLoading(false);
     }
-    patch({
-      rewardTokenMint: next.mint,
-      rewardTokenSymbol: next.symbol,
-      rewardTokenDecimals: next.decimals,
-      rewardPerHunterUsd: form.rewardPerHunter * next.priceUsd,
-    });
-  };
+  }, []);
+
+  useEffect(() => {
+    // Initial state already renders the loading card; defer the fetch a
+    // tick so no setState fires synchronously inside the effect body.
+    const id = window.setTimeout(() => void loadAnsem(), 0);
+    return () => window.clearTimeout(id);
+  }, [loadAnsem]);
 
   const onPerHunterChange = (next: number) => {
     patch({
       rewardPerHunter: next,
       rewardPerHunterUsd: token ? next * token.priceUsd : null,
-    });
-  };
-
-  // Switching network clears the token — addresses and prices don't carry
-  // across chains, and the picker validates a different format per chain.
-  const onChainChange = (next: Chain) => {
-    if (next === form.rewardChain) return;
-    setToken(null);
-    patch({
-      rewardChain: next,
-      rewardTokenMint: "",
-      rewardTokenSymbol: "",
-      rewardTokenDecimals: 0,
-      rewardPerHunterUsd: null,
-      // The holder-gate token must live on the bounty's chain too — clear
-      // it so a Solana token doesn't linger on an EVM bounty.
-      eligibilityFilters: {
-        ...form.eligibilityFilters,
-        holderRequirement: null,
-      },
     });
   };
 
@@ -229,8 +184,14 @@ export function CreateBountyClient({
     setLaunchError(null);
     setLaunchIssues(null);
 
-    // 1. Create draft
+    // 1. Create draft. The response carries the server-canonical pool +
+    //    fee snapshot — the escrow tx below MUST use these numbers, not
+    //    local float math, or on-chain verification can mismatch by a
+    //    raw unit (fractional lottery division) or drift with the
+    //    ANSEM price between page-mount and launch.
     let slug: string;
+    let escrowPool: number;
+    let escrowFee: number;
     try {
       const res = await fetch("/api/bounties", {
         method: "POST",
@@ -238,7 +199,14 @@ export function CreateBountyClient({
         body: JSON.stringify(form),
       });
       const body = (await res.json()) as
-        | { ok: true; bounty: { slug: string } }
+        | {
+            ok: true;
+            bounty: {
+              slug: string;
+              totalPool: string;
+              creationFeeAmount: string | null;
+            };
+          }
         | {
             ok: false;
             error: string;
@@ -253,6 +221,17 @@ export function CreateBountyClient({
         throw new Error("error" in body ? body.error : `HTTP ${res.status}`);
       }
       slug = body.bounty.slug;
+      escrowPool = Number(body.bounty.totalPool);
+      escrowFee =
+        body.bounty.creationFeeAmount != null
+          ? Number(body.bounty.creationFeeAmount)
+          : 0;
+      if (!Number.isFinite(escrowPool) || escrowPool <= 0) {
+        throw new Error("Server returned an invalid escrow amount");
+      }
+      if (!Number.isFinite(escrowFee) || escrowFee < 0) {
+        escrowFee = 0;
+      }
     } catch (err) {
       setLaunchState("error");
       setLaunchError(err instanceof Error ? err.message : String(err));
@@ -260,91 +239,10 @@ export function CreateBountyClient({
     }
 
     // 2. Escrow transfer (mock mode skips this entirely)
-    const evmChain = isEvmChain(form.rewardChain) ? form.rewardChain : null;
-    const activeEscrowMode = evmChain ? evmEscrowModes[evmChain] : escrowMode;
     let txSignature: string | undefined;
-    if (activeEscrowMode !== "mock") {
+    if (escrowMode !== "mock") {
       setLaunchState("awaiting_signature");
       try {
-        if (evmChain) {
-          // ---- EVM escrow (Monad/Base): pool + fee → treasury in ONE tx ----
-          const cfg = EVM_CHAINS[evmChain];
-          const evmTreasury = evmTreasuries[evmChain];
-          if (!evmTreasury) {
-            throw new Error(
-              `${cfg.label} treasury not configured on the server.`,
-            );
-          }
-          if (!evm.isConnected || !evm.address) {
-            evm.openConnectModal();
-            setLaunchState("idle");
-            setLaunchError(
-              `Connect a ${cfg.label} wallet to pay for the escrow, then click Launch again.`,
-            );
-            return;
-          }
-          if (evm.address.toLowerCase() === evmTreasury.toLowerCase()) {
-            setLaunchState("error");
-            setLaunchError(
-              "Your wallet is the treasury address. Switch to your personal wallet and try again.",
-            );
-            return;
-          }
-          // Save the connected EVM wallet so the payout routes to it.
-          try {
-            await fetch("/api/users/connect-wallet", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                walletAddress: evm.address,
-                provider: evm.walletName,
-                chain: evmChain,
-              }),
-            });
-          } catch (err) {
-            console.warn("[launch] connect-wallet save failed:", err);
-          }
-          if (!token) throw new Error("No reward token selected");
-          // Make sure the wallet is on the bounty's EVM chain before sending.
-          await switchChainAsync({ chainId: cfg.viemChain.id });
-
-          const totalPoolEvm = form.rewardPerHunter * form.maxHunters;
-          const creationFeeEvm =
-            token.priceUsd > 0 ? BOUNTY_CREATION_FEE_USD / token.priceUsd : 0;
-          // Pool + fee land in the treasury together (single recipient).
-          const treasuryAmount = totalPoolEvm + creationFeeEvm;
-          const isNative = token.symbol === cfg.nativeSymbol;
-          let hash: `0x${string}`;
-          // toRawAmount handles scientific-notation floats; viem's
-          // parseEther/parseUnits throw on a stringified '1e-7'.
-          if (isNative) {
-            hash = await sendTransactionAsync({
-              chainId: cfg.viemChain.id,
-              to: evmTreasury as `0x${string}`,
-              value: toRawAmount(treasuryAmount, 18),
-            });
-          } else {
-            hash = await writeContractAsync({
-              chainId: cfg.viemChain.id,
-              address: token.mint as `0x${string}`,
-              abi: erc20Abi,
-              functionName: "transfer",
-              args: [
-                evmTreasury as `0x${string}`,
-                toRawAmount(treasuryAmount, token.decimals),
-              ],
-            });
-          }
-          setLaunchState("awaiting_confirmation");
-          const receipt = await waitForTransactionReceipt(wagmiConfig, {
-            hash,
-            chainId: cfg.viemChain.id,
-          });
-          if (receipt.status !== "success") {
-            throw new Error(`On-chain escrow reverted (${hash})`);
-          }
-          txSignature = hash;
-        } else {
         if (!treasuryAddress) {
           throw new Error(
             "Treasury address not configured on the server. Set TREASURY_WALLET_PUBLIC_KEY in .env.local and restart.",
@@ -395,57 +293,36 @@ export function CreateBountyClient({
           }
         }
         const fromPubkey = new PublicKey(connectedWallet);
-        const totalPool = form.rewardPerHunter * form.maxHunters;
         if (!token) {
-          throw new Error("No reward token selected");
+          throw new Error("ANSEM price not loaded yet — try again");
         }
-        // Backend re-derives the same fee amount when verifying the
-        // signature. Devnet tokens often have $0 priceUsd → skip the
-        // fee. The launch route mirrors the same rule.
-        const creationFeeInToken =
-          token.priceUsd > 0
-            ? BOUNTY_CREATION_FEE_USD / token.priceUsd
-            : 0;
-        // When the platform has a separate revenue wallet, the pool
-        // and the fee are physically separated — pool to treasury,
-        // creation fee to revenue. Otherwise we fold them into a
-        // single combined transfer to treasury (legacy mode).
-        const splitFee = revenueAddress != null && creationFeeInToken > 0;
-        const treasuryAmount = splitFee
-          ? totalPool
-          : totalPool + creationFeeInToken;
+        // Escrow amounts come from the draft response (server-canonical
+        // snapshot) — see step 1. When the platform has a separate
+        // revenue wallet, the pool and the fee are physically separated
+        // — pool to treasury, creation fee to revenue. Otherwise we fold
+        // them into a single combined transfer to treasury (legacy mode).
+        const splitFee = revenueAddress != null && escrowFee > 0;
+        const treasuryAmount = splitFee ? escrowPool : escrowPool + escrowFee;
         const tx = await buildEscrowTransaction({
           connection,
           from: fromPubkey,
           treasuryAddress,
-          transfer:
-            token.symbol === "SOL"
-              ? { kind: "sol", lamports: solToLamports(treasuryAmount) }
-              : {
-                  kind: "spl",
-                  mint: token.mint,
-                  decimals: token.decimals,
-                  rawAmount: toRawAmount(treasuryAmount, token.decimals),
-                },
+          transfer: {
+            kind: "spl",
+            mint: token.mint,
+            decimals: token.decimals,
+            rawAmount: toRawAmount(treasuryAmount, token.decimals),
+          },
           fee:
             splitFee && revenueAddress
               ? {
                   revenueAddress,
-                  transfer:
-                    token.symbol === "SOL"
-                      ? {
-                          kind: "sol",
-                          lamports: solToLamports(creationFeeInToken),
-                        }
-                      : {
-                          kind: "spl",
-                          mint: token.mint,
-                          decimals: token.decimals,
-                          rawAmount: toRawAmount(
-                            creationFeeInToken,
-                            token.decimals,
-                          ),
-                        },
+                  transfer: {
+                    kind: "spl",
+                    mint: token.mint,
+                    decimals: token.decimals,
+                    rawAmount: toRawAmount(escrowFee, token.decimals),
+                  },
                 }
               : undefined,
         });
@@ -469,7 +346,6 @@ export function CreateBountyClient({
           );
         }
         txSignature = signature;
-        }
       } catch (err) {
         // wallet-adapter throws `WalletSendTransactionError` etc. —
         // dump everything for debugging, surface the simulation logs
@@ -529,8 +405,11 @@ export function CreateBountyClient({
 
   /* ---- Render ------------------------------------------------------- */
   const totalPool = form.rewardPerHunter * form.maxHunters;
-  const totalPoolUsd =
-    form.rewardPerHunterUsd != null
+  // Prefer the LIVE price for display — form.rewardPerHunterUsd is a
+  // snapshot from the last edit and can lag a retry-refreshed price.
+  const totalPoolUsd = token
+    ? form.rewardPerHunter * token.priceUsd * form.maxHunters
+    : form.rewardPerHunterUsd != null
       ? form.rewardPerHunterUsd * form.maxHunters
       : null;
 
@@ -540,7 +419,7 @@ export function CreateBountyClient({
       <header className="space-y-1">
         <h1 className="text-display">Create bounty</h1>
         <p className="text-body text-text-secondary">
-          Reward hunters for engaging with your tweet, signed in as{" "}
+          Reward hunters in $ANSEM for engaging with your tweet, signed in as{" "}
           <span className="text-text-primary">@{user.handle}</span>.
         </p>
       </header>
@@ -662,7 +541,7 @@ export function CreateBountyClient({
                         },
                       })
                     }
-                    requiredPlaceholder="Add keywords… e.g. $BNTY, alpha"
+                    requiredPlaceholder="Add keywords… e.g. $ANSEM, alpha"
                     forbiddenPlaceholder="e.g. spam, dump"
                   />
                   <div className="mt-5">
@@ -696,24 +575,24 @@ export function CreateBountyClient({
             title="Reward"
             helper={
               form.distributionModel === "pool_lottery"
-                ? "Set the total prize pool and how many random winners."
-                : "Choose what hunters earn and how many slots."
+                ? "Set the total $ANSEM prize pool and how many random winners."
+                : "Choose how much $ANSEM hunters earn and how many slots."
             }
             complete={
-              form.rewardPerHunter > 0 && form.maxHunters > 0
+              form.rewardPerHunter >= MIN_REWARD_PER_HUNTER_ANSEM &&
+              form.maxHunters > 0
             }
             errors={sectionErrors[6]}
           >
             <RewardSection
               token={token}
+              tokenLoading={tokenLoading}
+              tokenError={tokenError}
+              onTokenRetry={() => void loadAnsem()}
               rewardPerHunter={form.rewardPerHunter}
               maxHunters={form.maxHunters}
               mode={rewardMode}
-              chain={form.rewardChain}
-              availableChains={availableChains}
               isLottery={form.distributionModel === "pool_lottery"}
-              onTokenChange={onTokenChange}
-              onChainChange={onChainChange}
               onPerHunterChange={onPerHunterChange}
               onMaxHuntersChange={(n) => patch({ maxHunters: n })}
               onModeChange={setRewardMode}
@@ -724,13 +603,12 @@ export function CreateBountyClient({
             step={7}
             sectionId="bounty-section-7"
             title="Holder requirement"
-            helper="Optional — only allow hunters who hold a minimum balance of a specific token."
+            helper="Optional — only allow hunters who hold a minimum $ANSEM balance."
             complete
           >
             <HolderRequirementSection
-              key={form.rewardChain}
-              chain={form.rewardChain}
               value={form.eligibilityFilters.holderRequirement ?? null}
+              ansemToken={token}
               onChange={(next) =>
                 patch({
                   eligibilityFilters: {
@@ -759,7 +637,7 @@ export function CreateBountyClient({
           <CostBreakdown
             totalPool={totalPool}
             totalPoolUsd={totalPoolUsd}
-            tokenSymbol={token?.symbol ?? ""}
+            tokenSymbol={token?.symbol ?? "ANSEM"}
           />
 
           <div className="flex flex-col items-stretch gap-3 border-t border-border-subtle pt-6 sm:flex-row sm:items-center sm:justify-between">
@@ -805,12 +683,14 @@ export function CreateBountyClient({
             tweet={tweetResolved?.cached ?? null}
             authorAvatarUrl={tweetResolved?.authorAvatarUrl ?? null}
             actions={form.actionConfig}
-            rewardSymbol={token?.symbol ?? "—"}
-            rewardTokenCategory={token?.category ?? "other"}
+            rewardSymbol={token?.symbol ?? "ANSEM"}
+            rewardTokenCategory={token?.category ?? "memecoin"}
             rewardTokenLogoUrl={token?.logoUrl ?? null}
             rewardTokenIsAdminVerified={token?.isAdminVerified}
             rewardPerHunter={form.rewardPerHunter}
-            rewardPerHunterUsd={form.rewardPerHunterUsd}
+            rewardPerHunterUsd={
+              token ? form.rewardPerHunter * token.priceUsd : null
+            }
             maxHunters={form.maxHunters}
             durationHours={form.durationHours}
           />
@@ -823,7 +703,7 @@ export function CreateBountyClient({
         state={launchState}
         error={launchError}
         issues={launchIssues}
-        rewardSymbol={token?.symbol ?? "—"}
+        rewardSymbol={token?.symbol ?? "ANSEM"}
         totalPool={totalPool}
         totalPoolUsd={totalPoolUsd}
         creationFeeInToken={
@@ -879,7 +759,7 @@ function CostBreakdown({
             className="font-mono tabular-nums text-text-primary"
             data-numeric
           >
-            {formatUsd(BOUNTY_CREATION_FEE_USD)}
+            {formatUsd(BOUNTY_CREATION_FEE_USD)} in {tokenSymbol}
             <span className="ml-2 text-text-tertiary">
               · covers verification &amp; infra
             </span>
@@ -891,7 +771,7 @@ function CostBreakdown({
         <Row label="You pay now">
           <span className="font-mono tabular-nums text-text-primary" data-numeric>
             {totalPool.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
-            {tokenSymbol} + {formatUsd(BOUNTY_CREATION_FEE_USD)}
+            {tokenSymbol} + {formatUsd(BOUNTY_CREATION_FEE_USD)} in {tokenSymbol}
             {dueNowUsd != null && (
               <span className="ml-2 text-text-tertiary">
                 · ≈ {formatUsd(dueNowUsd)}
@@ -962,26 +842,15 @@ function validateForm({
     };
   }
   if (!token) {
-    return { ok: false, error: "Pick a reward token" };
-  }
-  if (!(form.rewardPerHunter > 0)) {
-    return { ok: false, error: "Reward must be greater than 0" };
+    return { ok: false, error: "Waiting for the live $ANSEM price…" };
   }
   if (!(form.maxHunters > 0)) {
     return { ok: false, error: "Number of slots must be at least 1" };
   }
-  const usdPerHunter = form.rewardPerHunter * token.priceUsd;
-  const usdTotalPool = usdPerHunter * form.maxHunters;
-  if (usdPerHunter < MIN_REWARD_PER_HUNTER_USD) {
+  if (form.rewardPerHunter < MIN_REWARD_PER_HUNTER_ANSEM) {
     return {
       ok: false,
-      error: `Per-hunter reward must be at least $${MIN_REWARD_PER_HUNTER_USD} USD (currently ≈ $${usdPerHunter.toFixed(2)})`,
-    };
-  }
-  if (usdTotalPool < MIN_TOTAL_POOL_USD) {
-    return {
-      ok: false,
-      error: `Total reward pool must be at least $${MIN_TOTAL_POOL_USD} USD (currently ≈ $${usdTotalPool.toFixed(2)})`,
+      error: `Each winner must earn at least ${MIN_REWARD_PER_HUNTER_ANSEM} ANSEM`,
     };
   }
   return { ok: true };
@@ -1016,12 +885,11 @@ function scrollToFirstError(issues: ValidationIssue[]): void {
 }
 
 /**
- * Privy's `signAndSendTransaction` wraps the underlying Solana RPC
- * `simulateTransaction` and throws a generic "Transaction simulation
- * failed" — the real cause (insufficient balance, ATA missing, decimal
- * mismatch, …) is parked on the error object as `cause`, `details`, or
- * an unstructured property. Walk the common shapes and return whatever
- * useful string we find.
+ * Wallet adapters wrap the underlying Solana RPC `simulateTransaction`
+ * and throw a generic "Transaction simulation failed" — the real cause
+ * (insufficient balance, ATA missing, decimal mismatch, …) is parked on
+ * the error object as `cause`, `details`, or an unstructured property.
+ * Walk the common shapes and return whatever useful string we find.
  */
 function extractSimulationDetail(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
@@ -1048,7 +916,7 @@ function extractSimulationDetail(err: unknown): string | null {
     );
   }
   if (/insufficient funds|insufficient lamports/i.test(allText)) {
-    return "Insufficient balance — top up the reward token or SOL for fees.";
+    return "Insufficient balance — top up ANSEM or SOL for fees.";
   }
   const logs =
     (Array.isArray(e.logs) && e.logs) ||

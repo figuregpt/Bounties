@@ -8,13 +8,6 @@ import type { BountySortBy } from "@/lib/db/queries/bounties";
  */
 export type DiscoverFilters = {
   statuses: BountyStatus[];
-  /** Settlement chain filter. Undefined = all chains. */
-  chain?: "solana" | "monad" | "base";
-  /** Token symbols OR base58 mint addresses. The token-picker UI adds
-   *  symbols for canonical chips and mint strings for paste-box
-   *  entries. The server matches either via `rewardTokenSymbol` /
-   *  `rewardTokenMint` (see queries/bounties.ts:buildWhere). */
-  rewardTokens: string[];
   minRewardPerHunterUsd: number;
   showIneligible: boolean;
   /** Filled non-lottery bounties are hidden from the feed by default —
@@ -32,7 +25,6 @@ export type DiscoverFilters = {
 
 export const DEFAULT_FILTERS: DiscoverFilters = {
   statuses: ["active"],
-  rewardTokens: [],
   minRewardPerHunterUsd: 0,
   // Default ON: in early-network conditions we'd rather show a
   // hunter every live bounty than hide ones they happen to not

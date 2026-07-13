@@ -1,37 +1,22 @@
 "use client";
 
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { useEvmWallet } from "@/hooks/useEvmWallet";
-import { isEvmChain } from "@/lib/chains/evm/config";
 
 /**
- * Picks the chain-appropriate wallet for a bounty's settlement chain.
- * Both underlying hooks are always called (React hook rules), and we
- * return whichever one matches `chain`. Use this anywhere a hunter has to
- * connect / read the wallet that will RECEIVE a payout — an EVM bounty
- * (Monad / Base) pays an EVM address, a Solana bounty pays a Solana
- * address. All EVM chains share one injected wallet (chain id differs).
+ * The wallet that RECEIVES payouts for a bounty. Every bounty settles on
+ * Solana since the ANSEM migration, so this is a thin projection of
+ * useWalletConnection kept for its narrower, serializable shape.
  */
 export type BountyWallet = {
-  chain: "solana" | "monad" | "base";
+  chain: "solana";
   address: string | null;
   isConnected: boolean;
   walletName: string | null;
   openConnectModal: () => void;
 };
 
-export function useBountyWallet(chain: string | null | undefined): BountyWallet {
+export function useBountyWallet(): BountyWallet {
   const sol = useWalletConnection();
-  const evm = useEvmWallet();
-  if (chain && isEvmChain(chain)) {
-    return {
-      chain,
-      address: evm.address,
-      isConnected: evm.isConnected,
-      walletName: evm.walletName,
-      openConnectModal: evm.openConnectModal,
-    };
-  }
   return {
     chain: "solana",
     address: sol.address,
@@ -41,18 +26,17 @@ export function useBountyWallet(chain: string | null | undefined): BountyWallet 
   };
 }
 
-/** Registers the connected wallet for its chain so the server-side payout
+/** Registers the connected Solana wallet so the server-side payout
  *  routes to it (the claim endpoint reads user_wallets by chain). Safe to
  *  call before every claim — it no-ops server-side when nothing changed. */
-export async function registerWalletForChain(
+export async function registerWallet(
   address: string,
-  chain: "solana" | "monad" | "base",
   provider: string | null,
 ): Promise<void> {
   await fetch("/api/users/connect-wallet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ walletAddress: address, provider, chain }),
+    body: JSON.stringify({ walletAddress: address, provider, chain: "solana" }),
   }).catch(() => {
     /* best-effort — the claim will surface a clear error if unregistered */
   });

@@ -107,7 +107,7 @@ type Step = {
 const HUNTER_STEPS: Step[] = [
   {
     title: "Browse Discover",
-    body: "Open Discover, filter by token, reward size, or time left. Each card shows the reward per hunter, slot count, and the tweet you'll engage with.",
+    body: "Open Discover, filter by reward size or time left. Each card shows the reward per hunter, slot count, and the tweet you'll engage with.",
     illustration: BountyCardMock,
   },
   {
@@ -145,7 +145,7 @@ const CREATOR_STEPS: Step[] = [
   },
   {
     title: "Set the reward + slots",
-    body: "Choose your token (USDC, SOL, or any SPL mint), reward per hunter, and how many slots. Total pool = reward × slots. A $1 flat creation fee covers verification + infra.",
+    body: "Every bounty pays $ANSEM. Set the reward per hunter (min 1 ANSEM) and how many slots. Total pool = reward × slots. A $1 flat creation fee (charged in ANSEM) covers verification + infra. Unfilled slots refund to your wallet when the campaign ends.",
     illustration: RewardMock,
   },
   {
@@ -270,7 +270,7 @@ function BountyCardMock() {
           <div className="text-[10px] text-text-tertiary">·  2h ago</div>
         </div>
         <span className="inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-token-stable-bg/20 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums text-token-stable-text">
-          5 USDC
+          5 ANSEM
         </span>
       </div>
       <p className="mt-2.5 line-clamp-2 text-[11px] leading-snug text-text-secondary">
@@ -312,7 +312,7 @@ function BountyDetailMock() {
           Ready to hunt
         </div>
         <div className="mt-0.5 text-[11px] text-accent-text">
-          Complete the actions and claim 5 USDC.
+          Complete the actions and claim 5 ANSEM.
         </div>
       </div>
       <button
@@ -373,7 +373,7 @@ function VerifyResultMock() {
           Reply verified
         </div>
         <div className="mt-0.5 text-[10px] text-text-tertiary">
-          Slot 4 of 20 · 5 USDC reserved
+          Slot 4 of 20 · 5 ANSEM reserved
         </div>
       </div>
       <div className="inline-flex h-6 w-full items-center justify-center rounded-[var(--radius-button)] bg-bg-elevated text-[10px] font-medium text-text-secondary">
@@ -406,7 +406,7 @@ function ClaimCenterMock() {
           <MockAvatar letter="$" size={20} />
           <div className="min-w-0 flex-1 text-[10px]">
             <div className="font-medium text-text-primary">@figuregpt</div>
-            <div className="text-text-tertiary">Verified · 5 USDC</div>
+            <div className="text-text-tertiary">Verified · 5 ANSEM</div>
           </div>
           <span className="rounded-[var(--radius-pill)] bg-accent-primary px-2 py-0.5 text-[9px] font-medium text-[#100F16]">
             Claim
@@ -522,7 +522,7 @@ function RewardMock() {
           <span className="grid size-3 place-items-center rounded-full bg-token-stable-text text-[7px] font-bold text-[#0E0E10]">
             $
           </span>
-          USDC
+          ANSEM
         </span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
@@ -548,7 +548,7 @@ function RewardMock() {
           Total pool
         </span>
         <span className="font-mono text-[11px] font-semibold tabular-nums text-accent-text">
-          100 USDC · ≈ $100
+          100 ANSEM · ≈ $28
         </span>
       </div>
     </div>
@@ -568,15 +568,15 @@ function WalletPromptMock() {
       <div className="mt-2 space-y-1 rounded-[6px] bg-black/40 p-2 text-[10px]">
         <div className="flex justify-between">
           <span className="text-[#9F9CA8]">Send</span>
-          <span className="font-mono tabular-nums">100 USDC</span>
+          <span className="font-mono tabular-nums">100 ANSEM</span>
         </div>
         <div className="flex justify-between">
           <span className="text-[#9F9CA8]">Creation fee</span>
-          <span className="font-mono tabular-nums">1 USDC</span>
+          <span className="font-mono tabular-nums">≈ $1 in ANSEM</span>
         </div>
         <div className="border-t border-white/10 pt-1 flex justify-between font-semibold">
           <span>Total</span>
-          <span className="font-mono tabular-nums">101 USDC</span>
+          <span className="font-mono tabular-nums">100 ANSEM + fee</span>
         </div>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -593,9 +593,9 @@ function WalletPromptMock() {
 
 function ActivityFeedMock() {
   const rows = [
-    { handle: "@degen42", amount: "5 USDC", action: "verified" },
-    { handle: "@solgirl", amount: "5 USDC", action: "verified" },
-    { handle: "@mooner", amount: "5 USDC", action: "claimed" },
+    { handle: "@degen42", amount: "5 ANSEM", action: "verified" },
+    { handle: "@solgirl", amount: "5 ANSEM", action: "verified" },
+    { handle: "@mooner", amount: "5 ANSEM", action: "claimed" },
   ];
   return (
     <div className="rounded-[10px] border border-border-default bg-bg-surface">
@@ -642,7 +642,7 @@ function CompletedMock() {
           <div className="h-full w-[90%] rounded-full bg-success" />
         </div>
         <div className="mt-1 flex items-center justify-between text-[9px] text-text-tertiary">
-          <span>90 USDC paid to hunters</span>
+          <span>90 ANSEM paid to hunters</span>
           <span>2 unfilled</span>
         </div>
       </div>
@@ -655,7 +655,7 @@ function CompletedMock() {
             Refunded to creator
           </span>
           <span className="font-mono text-[12px] font-semibold tabular-nums">
-            10 USDC
+            10 ANSEM
           </span>
         </div>
         <div className="mt-1 text-[9px] text-accent-text/80">

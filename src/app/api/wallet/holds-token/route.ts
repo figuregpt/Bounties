@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getChainAdapter, isChain } from "@/lib/chains";
+import { getChainAdapter } from "@/lib/chains";
 
 /**
  * GET /api/wallet/holds-token — read-only balance check used by the
@@ -17,8 +17,7 @@ const QuerySchema = z.object({
   wallet: z.string().min(20).max(64),
   mint: z.string().min(20).max(64),
   minAmount: z.coerce.number().positive(),
-  decimals: z.coerce.number().int().min(0).max(18),
-  chain: z.string().optional(),
+  decimals: z.coerce.number().int().min(0).max(9),
 });
 
 export const dynamic = "force-dynamic";
@@ -33,9 +32,8 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   }
-  const chain = isChain(parsed.data.chain) ? parsed.data.chain : "solana";
   try {
-    const holds = await getChainAdapter(chain).hasMinTokenBalance({
+    const holds = await getChainAdapter("solana").hasMinTokenBalance({
       wallet: parsed.data.wallet,
       mint: parsed.data.mint,
       minAmount: parsed.data.minAmount,

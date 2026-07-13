@@ -4,10 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { useEvmWallet } from "@/hooks/useEvmWallet";
-import { registerWalletForChain } from "@/hooks/useBountyWallet";
-import { isEvmChain, chainLabel } from "@/lib/chains/evm/config";
-import type { Chain } from "@/lib/chains/types";
+import { registerWallet } from "@/hooks/useBountyWallet";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { PendingHero } from "@/components/profile/pending-hero";
 import { StatCards } from "@/components/profile/stat-cards";
@@ -48,24 +45,7 @@ export function ProfileClient({
   currentUserWalletAddress,
 }: Props) {
   const router = useRouter();
-  // A hunter may have claims on both chains — pick the right wallet per
-  // claim by its chain.
   const sol = useWalletConnection();
-  const evm = useEvmWallet();
-  const walletFor = useCallback(
-    (chain: string) => {
-      const isEvm = isEvmChain(chain);
-      const w = isEvm ? evm : sol;
-      return {
-        chain: (isEvm ? chain : "solana") as Chain,
-        address: w.address,
-        isConnected: w.isConnected,
-        walletName: w.walletName,
-        openConnectModal: w.openConnectModal,
-      };
-    },
-    [evm, sol],
-  );
 
   const [activeTab, setActiveTab] = useState<ProfileTab>(
     isOwnProfile ? "to_claim" : "created",
@@ -81,21 +61,17 @@ export function ProfileClient({
   const performClaim = useCallback(
     async (
       claimId: string,
-      chain: string,
     ): Promise<{ ok: true; signature?: string } | { ok: false; error: string }> => {
-      const w = walletFor(chain);
-      if (!w.isConnected || !w.address) {
-        w.openConnectModal();
+      if (!sol.isConnected || !sol.address) {
+        sol.openConnectModal();
         return {
           ok: false,
-          error: isEvmChain(w.chain)
-            ? `Connect a ${chainLabel(w.chain)} wallet to claim this reward.`
-            : "Connect a Solana wallet to claim this reward.",
+          error: "Connect a Solana wallet to claim this reward.",
         };
       }
       try {
-        // Register the wallet for this chain so the payout routes to it.
-        await registerWalletForChain(w.address, w.chain, w.walletName);
+        // Register the wallet so the payout routes to it.
+        await registerWallet(sol.address, sol.walletName);
         const res = await fetch(`/api/claims/${claimId}/claim-reward`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -118,13 +94,13 @@ export function ProfileClient({
         };
       }
     },
-    [walletFor],
+    [sol],
   );
 
   const handleSingleClaim = useCallback(
-    async (claimId: string, chain: string) => {
+    async (claimId: string) => {
       setClaiming((prev) => new Set(prev).add(claimId));
-      const result = await performClaim(claimId, chain);
+      const result = await performClaim(claimId);
       setClaiming((prev) => {
         const next = new Set(prev);
         next.delete(claimId);
@@ -138,9 +114,12 @@ export function ProfileClient({
 
   /* ---- Claim all (sequential) ---------------------------------------- */
   const handleClaimAll = useCallback(async () => {
-    if (data.toClaim.length === 0) return;
+    // Rows frozen on a removed chain (monad/base) can't pay out — skip
+    // them here; ClaimList renders them disabled with support copy.
+    const claimable = data.toClaim.filter((r) => r.chain === "solana");
+    if (claimable.length === 0) return;
 
-    const initial: ClaimAllRow[] = data.toClaim.map((row) => ({
+    const initial: ClaimAllRow[] = claimable.map((row) => ({
       claimId: row.claimId,
       bountyTitle: row.bountyTitle,
       rewardAmount: row.rewardAmount,
@@ -151,9 +130,6 @@ export function ProfileClient({
 
     for (let i = 0; i < initial.length; i++) {
       const claimId = initial[i].claimId;
-      // Each claim settles on its own chain (performClaim picks the right
-      // wallet + opens the right modal if that chain isn't connected).
-      const claimChain = data.toClaim[i].chain;
       setBulkRows((prev) =>
         prev
           ? prev.map((r) =>
@@ -161,7 +137,7 @@ export function ProfileClient({
             )
           : prev,
       );
-      const result = await performClaim(claimId, claimChain);
+      const result = await performClaim(claimId);
       setBulkRows((prev) =>
         prev
           ? prev.map((r) =>
@@ -178,24 +154,10 @@ export function ProfileClient({
     }
   }, [data.toClaim, performClaim]);
 
-  // Per-chain connect prompts: show one only when there are unclaimed
-  // rewards on that chain's wallet stack and it isn't connected yet. All
-  // EVM chains (Monad/Base) share one injected wallet.
+  // Connect prompt: only when there are claimable (Solana) rewards and
+  // the wallet isn't connected yet.
   const needsSolWallet =
-    !sol.isConnected && data.toClaim.some((r) => !isEvmChain(r.chain));
-  const needsMonadWallet =
-    !evm.isConnected && data.toClaim.some((r) => isEvmChain(r.chain));
-  // Which EVM chains actually have pending rewards — drives the prompt
-  // copy (one injected wallet serves all of them, but we name them).
-  const evmClaimLabels = useMemo(() => {
-    const set = new Set(
-      data.toClaim
-        .map((r) => r.chain)
-        .filter((c): c is "monad" | "base" => isEvmChain(c))
-        .map((c) => chainLabel(c)),
-    );
-    return Array.from(set).join(" / ");
-  }, [data.toClaim]);
+    !sol.isConnected && data.toClaim.some((r) => r.chain === "solana");
 
   const closeBulk = useCallback(() => {
     setBulkRows(null);
@@ -240,19 +202,10 @@ export function ProfileClient({
         createdCount={data.stats.createdCount}
       />
 
-      {/* Per-chain connect prompts — a hunter may have rewards waiting on
-          Solana and/or an EVM chain (Monad / Base); each wallet stack
-          needs its own connection. */}
       {isOwnProfile && needsSolWallet && (
         <ConnectPrompt
-          label="Connect a Solana wallet (Phantom / Solflare) to claim your Solana rewards."
+          label="Connect a Solana wallet (Phantom / Solflare) to claim your rewards."
           onConnect={sol.openConnectModal}
-        />
-      )}
-      {isOwnProfile && needsMonadWallet && (
-        <ConnectPrompt
-          label={`Connect an EVM wallet to claim your ${evmClaimLabels || "Monad"} rewards.`}
-          onConnect={evm.openConnectModal}
         />
       )}
 

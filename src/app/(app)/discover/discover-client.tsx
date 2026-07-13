@@ -88,7 +88,6 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
     ) {
       n += 1;
     }
-    if (filters.rewardTokens.length > 0) n += 1;
     if (filters.minRewardPerHunterUsd > 0) n += 1;
     if (filters.showIneligible !== DEFAULT_FILTERS.showIneligible) n += 1;
     if (filters.showFilled !== DEFAULT_FILTERS.showFilled) n += 1;
@@ -113,11 +112,8 @@ export function DiscoverClient({ user: _user, initial, activities }: Props) {
   const queryFilters = useMemo(
     () => ({
       sortBy: filters.sortBy,
-      chain: filters.chain,
       showIneligible: filters.showIneligible,
       showFilled: filters.showFilled,
-      rewardTokens:
-        filters.rewardTokens.length > 0 ? filters.rewardTokens : undefined,
       status: filters.statuses.length > 0 ? filters.statuses : undefined,
       minRewardPerHunterUsd:
         filters.minRewardPerHunterUsd > 0

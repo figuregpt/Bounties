@@ -20,8 +20,6 @@
  * the form's `defaultCreateBountyValues` is a client call.
  */
 
-import { EVM_CHAINS, isEvmChain } from "@/lib/chains/evm/config";
-
 export type SolanaNetwork = "mainnet-beta" | "devnet";
 
 export type CanonicalToken = {
@@ -107,36 +105,6 @@ const REGISTRY: Record<SolanaNetwork, Record<string, CanonicalToken>> = {
   // dev environment needs canonical tokens against the test cluster.
   devnet: MAINNET,
 };
-
-/* =========================================================================
-   EVM (Monad / Base / …) canonical tokens.
-
-   USDC on an EVM chain has no DexScreener logo (it's the quote side of
-   pairs, like on Solana), so the strict logo-gate in enrichToken would
-   reject it. We hardcode it (pegged $1, USDC logo, per-chain address from
-   EVM_CHAINS) so it's selectable. Native (MON/ETH) is handled separately in
-   enrichToken (live DexScreener price + symbol override).
-   ========================================================================= */
-
-/** EVM USDC canonical for `chain` if `mint` is that chain's USDC.
- *  Case-insensitive (EVM addresses). */
-export function getEvmCanonicalByMint(
-  mint: string,
-  chain: string,
-): CanonicalToken | null {
-  if (!isEvmChain(chain)) return null;
-  if (mint.toLowerCase() !== EVM_CHAINS[chain].usdc.toLowerCase()) return null;
-  return {
-    mint,
-    symbol: "USDC",
-    name: "USD Coin",
-    decimals: 6,
-    priceUsd: 1,
-    category: "stablecoin",
-    logoUrl: USDC_LOGO,
-    firstSeenAt: new Date("2025-01-01T00:00:00Z"),
-  };
-}
 
 /* =========================================================================
    Network resolution

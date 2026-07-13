@@ -70,10 +70,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          chain === "solana"
-            ? "Wallet address must be a valid on-curve Solana pubkey"
-            : "Wallet address must be a valid EVM (0x) address",
+        error: "Wallet address must be a valid on-curve Solana pubkey",
         errorCode: "invalid_address",
       },
       { status: 400 },

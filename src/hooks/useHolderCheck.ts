@@ -36,8 +36,6 @@ export type HolderCheckState =
 export function useHolderCheck(args: {
   requirement: HolderRequirement | null;
   wallet: string | null;
-  /** Bounty's settlement chain — the gate checks a balance on this chain. */
-  chain?: string;
 }): HolderCheckState {
   const initialStatus: HolderCheckState = !args.requirement
     ? { status: "no_requirement" }
@@ -50,7 +48,6 @@ export function useHolderCheck(args: {
   const reqMin = args.requirement?.minAmount ?? null;
   const reqDec = args.requirement?.decimals ?? null;
   const wallet = args.wallet;
-  const chain = args.chain ?? "solana";
 
   useEffect(() => {
     if (!reqMint || reqMin == null || reqDec == null) {
@@ -70,7 +67,6 @@ export function useHolderCheck(args: {
       mint: reqMint,
       minAmount: String(reqMin),
       decimals: String(reqDec),
-      chain,
     });
     fetch(`/api/wallet/holds-token?${params.toString()}`, {
       cache: "no-store",
@@ -98,7 +94,7 @@ export function useHolderCheck(args: {
     return () => {
       cancelled = true;
     };
-  }, [reqMint, reqMin, reqDec, wallet, chain]);
+  }, [reqMint, reqMin, reqDec, wallet]);
 
   return state;
 }

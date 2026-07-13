@@ -221,13 +221,13 @@ function TokenMark({ symbol }: { symbol: string }) {
 
 function paletteFor(symbol: string): { bg: string; text: string } {
   switch (symbol.toUpperCase()) {
+    case "ANSEM":
+      return { bg: "#F59E0B33", text: "#FCD34D" };
     case "USDC":
     case "USDT":
       return { bg: "#2DD4BF33", text: "#5EEAD4" };
     case "SOL":
       return { bg: "#9333EA33", text: "#C4B5FD" };
-    case "BNTY":
-      return { bg: "#AB9FF233", text: "#C7BFFA" };
     default:
       return { bg: "#1F1F28", text: "#EDEDF0" };
   }

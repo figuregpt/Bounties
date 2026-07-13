@@ -1,14 +1,12 @@
 /**
- * Chain abstraction.
+ * Chain abstraction — Solana-only since the ANSEM migration.
  *
- * Every code path that touches an RPC, an address format, a private key,
- * or a transaction is routed through a `ChainAdapter`, selected per-bounty
- * by the `chain` discriminator on the bounties / claims rows.
- *
- * The Solana adapter (./solana) wraps the existing `src/lib/solana/*` code
- * near-verbatim — the structured return types below already match what
- * that code returns. A Monad adapter (added later) implements the same
- * surface with viem.
+ * The app settles exclusively on Solana now (Monad/Base EVM support was
+ * removed), but the `chain` discriminator column survives on bounties /
+ * claims / tokens / user_wallets rows, so the adapter surface stays as
+ * the single dispatch point for RPC / address / signing operations.
+ * Historical rows with chain != 'solana' must be skipped loudly, never
+ * routed through the Solana adapter — see getChainAdapter call sites.
  *
  * In practice this is a SERVER-side construct: `verifyEscrowTx` and
  * `sendReward` sign transactions and hit RPC. Client code that only needs
@@ -20,22 +18,16 @@ import type {
 } from "@/lib/solana/verify-tx";
 import type { RewardResult, RewardTransfer } from "@/lib/solana/treasury";
 
-export type Chain = "solana" | "monad" | "base";
+export type Chain = "solana";
 
-export const SUPPORTED_CHAINS = [
-  "solana",
-  "monad",
-  "base",
-] as const satisfies Chain[];
+export const SUPPORTED_CHAINS = ["solana"] as const satisfies Chain[];
 
 export function isChain(value: unknown): value is Chain {
-  return value === "solana" || value === "monad" || value === "base";
+  return value === "solana";
 }
 
-// Re-export the shared transfer / verify payload shapes so call sites and
-// future adapters reference them from one place. They are already
-// chain-agnostic: addresses are strings, amounts are bigint | number,
-// decimals are ints — nothing Solana-specific leaks through the types.
+// Re-export the shared transfer / verify payload shapes so call sites
+// reference them from one place.
 export type {
   VerifyEscrowArgs,
   VerifyEscrowResult,
@@ -48,11 +40,11 @@ export interface ChainAdapter {
   /** Format / validity check for a user wallet address on this chain. */
   isValidWallet(address: string): boolean;
 
-  /** Format / validity check for a token mint / contract address. */
+  /** Format / validity check for a token mint address. */
   isValidTokenAddress(address: string): boolean;
 
   /** Canonical form of an address — identity on Solana (base58 is already
-   *  canonical), EIP-55 checksum on EVM. Stored and compared in this form. */
+   *  canonical). Stored and compared in this form. */
   normalizeAddress(address: string): string;
 
   /** Read a token's on-chain decimals. */
@@ -72,15 +64,13 @@ export interface ChainAdapter {
   /** Send a reward / refund from the treasury (server-side signing). */
   sendReward(transfer: RewardTransfer): Promise<RewardResult>;
 
-  /** Is real on-chain settlement enabled for this chain (else mock)? */
+  /** Is real on-chain settlement enabled (else mock)? */
   isRealTxEnabled(): boolean;
 
   /** Recognize a mock signature this adapter emits in non-real mode. */
   isMockSignature(signature: string | null | undefined): boolean;
 
   /** Look up the on-chain status of a previously submitted tx — used by
-   *  recover-stuck-claims to decide whether a payout actually landed.
-   *  Optional: the Solana path still uses its own recovery logic until
-   *  that cron is moved onto the adapter. */
+   *  recover-stuck-claims to decide whether a payout actually landed. */
   getTxReceipt?(hash: string): Promise<{ found: boolean; success: boolean }>;
 }

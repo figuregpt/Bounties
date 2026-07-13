@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { bounties, tokens } from "@/lib/db/schema";
 import { verifyCronRequest } from "@/lib/cron/auth";
 import { enrichToken } from "@/lib/tokens/enrichment";
-import { isChain } from "@/lib/chains";
+import { ANSEM_MINT } from "@/lib/tokens/ansem";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,11 +12,11 @@ export const runtime = "nodejs";
 /**
  * POST /api/cron/refresh-token-prices — every 5 minutes.
  *
- * Refreshes DexScreener price / liquidity / volume for tokens currently
- * referenced by an active bounty whose data has gone stale. Idempotent:
- * the enrichment service writes through to the `tokens` row with the
- * fresh timestamp so the next cron run will skip anything refreshed in
- * the last 5 minutes.
+ * ANSEM is ALWAYS refreshed, even with zero active bounties: the $1
+ * creation fee is converted to ANSEM from the cached price at launch
+ * time, so a stale row would misprice (or block) every launch.
+ * Tokens referenced by still-active legacy bounties keep refreshing
+ * until those bounties reach a terminal state.
  *
  * Failures on individual tokens are logged + skipped — one bad mint
  * shouldn't take down the whole batch.
@@ -32,24 +32,23 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const cutoff = new Date(Date.now() - STALE_AFTER_MS);
 
-  // Subquery: distinct mints in use by active bounties.
+  // ANSEM + distinct mints still in use by active (legacy) bounties.
   const activeMints = await db
     .selectDistinct({ mint: bounties.rewardTokenMint })
     .from(bounties)
     .where(eq(bounties.status, "active"));
-  if (activeMints.length === 0) {
-    return NextResponse.json({ ok: true, refreshed: 0, attempted: 0 });
-  }
+  const mintSet = new Set<string>([
+    ANSEM_MINT,
+    ...activeMints.map((r) => r.mint),
+  ]);
 
   const candidates = await db
-    .select({ mint: tokens.mint, chain: tokens.chain })
+    .select({ mint: tokens.mint })
     .from(tokens)
     .where(
       and(
-        inArray(
-          tokens.mint,
-          activeMints.map((r) => r.mint),
-        ),
+        eq(tokens.chain, "solana"),
+        inArray(tokens.mint, [...mintSet]),
         eq(tokens.flaggedAsScam, false),
         or(
           isNull(tokens.jupiterPriceUpdatedAt),
@@ -59,20 +58,30 @@ export async function POST(req: NextRequest) {
     )
     .limit(BATCH);
 
+  // ANSEM is included whenever it's missing OR stale — the unordered
+  // LIMIT above could otherwise fill the batch with legacy mints and
+  // silently starve the one token the fee conversion depends on.
+  const mintsToRefresh = new Set(candidates.map((r) => r.mint));
+  const [ansemRow] = await db
+    .select({ updatedAt: tokens.jupiterPriceUpdatedAt })
+    .from(tokens)
+    .where(and(eq(tokens.chain, "solana"), eq(tokens.mint, ANSEM_MINT)))
+    .limit(1);
+  const ansemFresh =
+    ansemRow?.updatedAt != null && ansemRow.updatedAt > cutoff;
+  if (!ansemFresh) {
+    mintsToRefresh.add(ANSEM_MINT);
+  }
+
   let refreshed = 0;
   const errors: Array<{ mint: string; error: string }> = [];
-  for (const row of candidates) {
+  for (const mint of mintsToRefresh) {
     try {
-      // Enrich on the token's OWN chain — a Monad ERC-20 must not be sent
-      // down the Solana/DexScreener-solana path (it would throw + go stale).
-      await enrichToken(row.mint, {
-        chain: isChain(row.chain) ? row.chain : "solana",
-        forceRefresh: true,
-      });
+      await enrichToken(mint, { forceRefresh: true });
       refreshed += 1;
     } catch (err) {
       errors.push({
-        mint: row.mint,
+        mint,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -96,7 +105,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    attempted: candidates.length,
+    attempted: mintsToRefresh.size,
     refreshed,
     errorCount: errors.length,
     errors: errors.slice(0, 5),

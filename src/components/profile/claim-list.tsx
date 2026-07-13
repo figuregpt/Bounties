@@ -13,7 +13,7 @@ type Props = {
   claiming: Set<string>;
   /** True when claim-all is iterating — single Claim buttons disabled. */
   bulkInFlight: boolean;
-  onClaim: (claimId: string, chain: string) => void;
+  onClaim: (claimId: string) => void;
 };
 
 /**
@@ -37,7 +37,11 @@ export function ClaimList({ rows, claiming, bulkInFlight, onClaim }: Props) {
     <ul className="space-y-2">
       {rows.map((row) => {
         const isClaimingThis = claiming.has(row.claimId);
-        const disabled = isClaimingThis || bulkInFlight;
+        // Rewards frozen on a removed chain (monad/base) can't pay out
+        // through the Solana treasury — render them inert instead of
+        // letting every click end in a support-ticket error.
+        const unsupportedChain = row.chain !== "solana";
+        const disabled = isClaimingThis || bulkInFlight || unsupportedChain;
         return (
           <li
             key={row.claimId}
@@ -79,11 +83,18 @@ export function ClaimList({ rows, claiming, bulkInFlight, onClaim }: Props) {
             </div>
             <button
               type="button"
-              onClick={() => onClaim(row.claimId, row.chain)}
+              onClick={() => onClaim(row.claimId)}
               disabled={disabled}
+              title={
+                unsupportedChain
+                  ? "This reward is on a network we no longer support — contact support to settle it."
+                  : undefined
+              }
               className="press inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] bg-accent-primary px-4 text-small font-medium text-[#100F16] hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isClaimingThis ? (
+              {unsupportedChain ? (
+                "Unsupported"
+              ) : isClaimingThis ? (
                 <>
                   <Loader className="size-3.5 animate-spin" strokeWidth={2.5} />
                   Claiming

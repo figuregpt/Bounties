@@ -3,14 +3,12 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import {
   enrichToken,
-  isValidSolanaMint,
   TokenFlaggedError,
   TokenLogoMissingError,
   TokenNotFoundError,
   TokenPriceUnavailableError,
 } from "@/lib/tokens/enrichment";
-import { isValidEvmToken } from "@/lib/tokens/dexscreener";
-import { isEvmChain } from "@/lib/chains/evm/config";
+import { ANSEM_MINT } from "@/lib/tokens/ansem";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,23 +16,18 @@ export const runtime = "nodejs";
 /**
  * POST /api/tokens/enrich — { mintAddress } → enriched token JSON.
  *
- * Auth-gated to prevent random clients from using us as a free
- * DexScreener proxy. The route is idempotent — first call hits
- * DexScreener + Solana RPC, subsequent calls within 5 minutes return
- * the cached `tokens` row.
- *
- * Errors map to HTTP:
- *   • invalid mint format         → 400
- *   • no DexScreener pairs        → 404
- *   • DexScreener has no price    → 422 (different from "not found" —
- *                                   token exists, just no liquidity)
- *   • token flagged as scam       → 403
- *   • upstream timeout / other    → 502
+ * ANSEM-only: the reward and holder tokens are both fixed to $ANSEM, so
+ * this route only resolves that one mint (the create form calls it on
+ * mount for live price/logo). Restricting the mint also closes the
+ * "free DexScreener proxy" surface. Auth-gated; idempotent — first call
+ * hits DexScreener + Solana RPC, subsequent calls within 5 minutes
+ * return the cached `tokens` row.
  */
 
 const BodySchema = z.object({
-  mintAddress: z.string().min(20).max(64),
-  chain: z.enum(["solana", "monad", "base"]).optional(),
+  mintAddress: z.literal(ANSEM_MINT, {
+    message: "Only the $ANSEM mint can be enriched",
+  }),
 });
 
 export async function POST(req: NextRequest) {
@@ -63,26 +56,8 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const mintAddress = parsed.data.mintAddress.trim();
-  const chain = parsed.data.chain ?? "solana";
-  const validFormat = isEvmChain(chain)
-    ? isValidEvmToken(mintAddress)
-    : isValidSolanaMint(mintAddress);
-  if (!validFormat) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: isEvmChain(chain)
-          ? "Doesn't look like a 0x token address"
-          : "Doesn't look like a Solana token address",
-        errorCode: "invalid_mint",
-      },
-      { status: 400 },
-    );
-  }
-
   try {
-    const enriched = await enrichToken(mintAddress, { chain });
+    const enriched = await enrichToken(parsed.data.mintAddress);
     return NextResponse.json({ ok: true, token: enriched });
   } catch (err) {
     if (err instanceof TokenFlaggedError) {
